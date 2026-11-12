@@ -1,0 +1,4 @@
+# 国内或个人直连例外
+# 只放需要强制直连的域名，勿加入账号密钥。
+# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
+# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
