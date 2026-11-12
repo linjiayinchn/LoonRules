@@ -1,0 +1,4 @@
+# AI 服务补充规则
+# 用于第三方 AI 合集尚未覆盖的 AI 域名；订阅时绑定“AI 服务”策略组。
+# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
+# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
