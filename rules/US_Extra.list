@@ -1,0 +1,4 @@
+# 美国节点其他例外
+# 适合个别明确希望走美国节点的站点。
+# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
+# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
