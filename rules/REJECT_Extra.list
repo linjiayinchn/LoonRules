@@ -1,4 +1,5 @@
-# 拦截例外
-# 只在确认确实需要拦截时填写，误拦截可能导致功能异常。
-# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
-# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
+# REJECT_Extra: 个人拦截例外
+# 原 Karing 仅使用 acl:BanAD、acl:BanProgramAD、geosite:category-ads 等广告规则，
+# 未单独手工维护广告域名。应直接使用可信的广告规则订阅，不重复抄入此文件。
+# 暂无活动规则；误拦截可能破坏网页、支付或应用登录。
+# 绑定 Loon 策略：REJECT；有个人例外后再订阅。
