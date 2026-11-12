@@ -1,0 +1,4 @@
+# GitHub 补充规则
+# GitHub 通用规则由 blackmatrix7 订阅维护；只在这里维护专属例外。
+# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
+# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
