@@ -1,4 +1,5 @@
-# 苹果服务补充规则
-# 只添加需要单独处理的苹果域名；订阅策略由 Loon 决定，不在文件中绑定。
-# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
-# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
+# Apple_Extra: 苹果服务个人例外
+# 原 Karing 的 appleid.apple.com、idmsa.apple.com、humb.apple.com、
+# register.appattest.apple.com 建议交给已有的 Apple/Apple_Domain 规则与“苹果服务”策略。
+# 当前不新增重复规则；如有个别服务必须切换出口，再在此添加精准域名。
+# 绑定 Loon 策略组：苹果服务；无有效规则时无需订阅本文件。
