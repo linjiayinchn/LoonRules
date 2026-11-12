@@ -1,0 +1,4 @@
+# 苹果服务补充规则
+# 只添加需要单独处理的苹果域名；订阅策略由 Loon 决定，不在文件中绑定。
+# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
+# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
