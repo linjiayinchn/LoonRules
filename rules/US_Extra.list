@@ -1,4 +1,12 @@
-# 美国节点其他例外
-# 适合个别明确希望走美国节点的站点。
-# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
-# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
+# US_Extra: 原 Karing 指定美国线路的网站补充（9 条）
+# 绑定 Loon 策略组：美国节点
+# 排除身份认证、支付、验证码、公共云和大范围 CDN，以免影响其他 App。
+DOMAIN-SUFFIX,cdn.tldraw.com
+DOMAIN-SUFFIX,app.buildwithfern.com
+DOMAIN-SUFFIX,prod.ferndocs.com
+DOMAIN-SUFFIX,files.buildwithfern.com
+DOMAIN-SUFFIX,icons.ferndocs.com
+DOMAIN-SUFFIX,ident.me
+DOMAIN-SUFFIX,ipwho.is
+DOMAIN-SUFFIX,ipapi.co
+DOMAIN-SUFFIX,8-lives-cat.io
