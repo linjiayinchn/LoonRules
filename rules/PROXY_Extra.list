@@ -1,4 +1,14 @@
-# 国外通用代理例外
-# 适合漏网的境外域名；订阅时绑定 Available 等通用代理策略。
-# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
-# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
+# PROXY_Extra: 原 Karing 使用的国外技术与资源域名（11 条）
+# 绑定 Loon 策略组：Available / 国外服务（不强制美国）
+# 注意：cloudflare.com 可覆盖其子域名，例如 cdnjs.cloudflare.com。
+DOMAIN-SUFFIX,cloudflare.com
+DOMAIN-SUFFIX,static.cloudflareinsights.com
+DOMAIN-SUFFIX,cdn.jsdelivr.net
+DOMAIN-SUFFIX,unpkg.com
+DOMAIN-SUFFIX,esm.sh
+DOMAIN-SUFFIX,imagedelivery.net
+DOMAIN-SUFFIX,storage.googleapis.com
+DOMAIN-SUFFIX,formulae.brew.sh
+DOMAIN-SUFFIX,i.ytimg.com
+DOMAIN-SUFFIX,yt3.ggpht.com
+DOMAIN-SUFFIX,www.youtube.com
