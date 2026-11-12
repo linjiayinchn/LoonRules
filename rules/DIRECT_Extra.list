@@ -1,4 +1,5 @@
-# 国内或个人直连例外
-# 只放需要强制直连的域名，勿加入账号密钥。
-# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
-# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
+# DIRECT_Extra: 个人指定直连
+# 原 Karing 的国内直连仅配置了 ChinaIp / ChinaDomain / SteamCN / ChinaMedia 等内置规则，
+# 没有手工指定的国内域名。建议继续使用 Loon 既有 CN 订阅及 GEOIP,CN,DIRECT,no-resolve。
+# 暂无活动规则：请勿凭空添加国内银行、支付、政府等域名以免造成分流误判。
+# 绑定 Loon 策略：DIRECT；有个人例外后再订阅。
