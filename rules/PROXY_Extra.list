@@ -1,0 +1,4 @@
+# 国外通用代理例外
+# 适合漏网的境外域名；订阅时绑定 Available 等通用代理策略。
+# Loon remote rules: 一行一条，如 DOMAIN-SUFFIX,example.com
+# 当前无启用规则；有需要时先填入真实域名，再添加到 Loon 订阅。
