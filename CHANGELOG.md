@@ -1,5 +1,13 @@
 # 变更记录
 
+## 2026-11-13 · AI 改为完整自维护规则
+
+- 将 `rules/AI_Extra.list` 从 29 条补充域名升级为 **128 条完整 AI 规则**，保留原订阅 URL，不要求 Loon 重新导入。
+- 新增完整的 OpenAI、Claude、Google Gemini / Gemini Notebook、Copilot、Grok、Perplexity、AI 编程、模型聚合、图像音视频等覆盖。
+- 已将 2026 年的 Gemini Notebook 新域名 `notebook.google.com` 纳入；独立 Sora 服务已终止，不再额外增加无用的 Sora 专项域名。
+- 排除公用 Google 搜索 API、Apple 认证、支付、广义 CDN 等高误匹配目标。
+- 以后 AI 不再订阅单独的 AI_Main 或 fmz200 AI 合集，改为 GitHub 自维护。
+
 ## 2026-11-13 · 加密货币/Web3 规则集
 
 - 新增 `rules/Crypto_Web3.list`，188 条独立域名后缀，覆盖 Phantom、GMGN、Fomo、Solana、交易所、DeFi、钱包、区块浏览器、RPC、行情平台等 10 类。
