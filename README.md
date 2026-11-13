@@ -11,7 +11,6 @@ Routing rule lists for Loon, with a small configuration extension for FlClash.
 | `rules/US_Media_Finance.list` | Financial and international news sources |
 | `rules/US_Extra.list` | Additional region-specific domains |
 | `rules/PROXY_Extra.list` | General external services |
-| `rules/{Apple,DIRECT,GitHub,REJECT}_Extra.list` | Reserved lists; currently empty |
 | `flclash/LoonRules.js` | FlClash configuration extension |
 
 ## Rule format
