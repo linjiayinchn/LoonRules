@@ -1,5 +1,5 @@
 // LoonRules: FlClash/Mihomo subscription extension (v2, 2026-11-13)
-// Uses the ACTUAL name of the airport's selector, including emoji prefixes.
+// Uses the ACTUAL name of the source selector, including emoji prefixes.
 // Flattens nested fallback groups to actual nodes for latency-first selection.
 // Adds self-maintained AI/Crypto/Finance rule providers (remote, 24h refresh).
 // No node credentials, subscription tokens or private data.
@@ -23,7 +23,7 @@ function main(config) {
     }
 
     // Never assume the selector name is literally "节点选择":
-    // the PPVPN profile can call it "🚀 节点选择" or add other prefixes.
+    // the subscription profile can call it "🚀 节点选择" or add other prefixes.
     var selector = null;
     for (i = 0; i < groups.length; i++) {
       if (groups[i] && /节点选择/.test(groups[i].name || "")) {
@@ -86,7 +86,7 @@ function main(config) {
       console.warn("[LoonRules] Only " + leaves.length +
         " leaf nodes detected; retaining existing node selection.");
     }
-    // Leave airport fallback groups untouched to protect any rules referencing them.
+    // Leave source fallback groups untouched to protect any rules referencing them.
 
     var groupName = selector.name;
     var providers = out["rule-providers"];
