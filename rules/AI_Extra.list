@@ -1,12 +1,7 @@
-# NAME: AI (self-maintained; legacy subscription filename AI_Extra.list)
-# UPDATED: 2026-11-13
-# SOURCE: User Karing rules, vetted upstream Loon lists, and current official AI service documentation.
-# POLICY: US in Loon; maintain a single AI subscription. AI_Main / fmz200 AI.list is NOT required.
-# PRESERVE URL: https://raw.githubusercontent.com/linjiayinchn/LoonRules/main/rules/AI_Extra.list
-# NOTE: Domain rules route traffic, not an app verification or security allowlist.
-# NOTE: Shared Apple services, Google search APIs, Microsoft auth, Stripe, analytics, generic Cloudflare/CDN domains excluded.
-# NOTE: Google NotebookLM now Gemini Notebook at notebook.google.com; old notebooklm.google.com kept for redirects.
-# NOTE: OpenAI Sora standalone services discontinued in 2026; legacy sora.com excluded.
+# NAME: AI
+# FORMAT: Loon / Mihomo classical rules
+# Routing policy is selected by the client.
+# Rules are routing matches, not an endorsement of individual services.
 
 # OpenAI / ChatGPT / Codex (17)
 DOMAIN-SUFFIX,openai.com
