@@ -44,7 +44,7 @@ function main(config) {
   // Keep the source's nested groups: other rules may still reference them.
   const providers = next["rule-providers"] && typeof next["rule-providers"] === "object" && !Array.isArray(next["rule-providers"]) ? next["rule-providers"] : {};
   const root = "https://raw.githubusercontent.com/linjiayinchn/LoonRules/main/rules/";
-  const specs = [["LR_AI", "AI_Extra.list"], ["LR_Crypto", "Crypto_Web3.list"], ["LR_Finance", "US_Media_Finance.list"]];
+  const specs = [["LR_AI", "AI.list"], ["LR_Crypto", "Crypto.list"], ["LR_Finance", "US_Media_Finance.list"]];
   const prepended = [];
   for (const [name, file] of specs) {
     providers[name] = {type:"http", behavior:"classical", format:"text", url:root+file, path:"./ruleset/"+name+".list", interval:86400, proxy:selector.name};
