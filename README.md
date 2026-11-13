@@ -10,6 +10,7 @@
 
 | 文件 | 当前有效规则 | 建议策略 | 说明 |
 | --- | ---: | --- | --- |
+| [Crypto_Web3.list](rules/Crypto_Web3.list) | 188 | US（或单独的 Crypto 组） | 数字货币与 Web3，含 Phantom、GMGN、Fomo、Solana、钱包、交易所、DEX 和链上数据 |
 | [US_Media_Finance.list](rules/US_Media_Finance.list) | 146 | 美国节点 | 财经金融与国际媒体，按原 Karing 手工域名保留 |
 | [AI_Extra.list](rules/AI_Extra.list) | 29 | AI 服务 | 未被现用 AI 合集明确覆盖的个人补充 |
 | [US_Extra.list](rules/US_Extra.list) | 9 | 美国节点 | 文档网站和 IP 检测等指定美国服务 |
@@ -24,7 +25,7 @@ Raw URL 格式：`https://raw.githubusercontent.com/linjiayinchn/LoonRules/main/
 例如，美国财经与国际媒体：
 `https://raw.githubusercontent.com/linjiayinchn/LoonRules/main/rules/US_Media_Finance.list`
 
-建议只订阅**有有效规则的 4 个文件**。其余文件保留作将来新增例外。不要因为文件存在就全量启用空规则订阅。
+建议只订阅**有有效规则的 5 个文件**。其余文件保留作将来新增例外。不要因为文件存在就全量启用空规则订阅。
 
 ## 推荐沿用的第三方订阅（不复制到本仓库）
 
@@ -52,3 +53,12 @@ AI、GitHub、Apple 中已经被上游覆盖的部分，不再重复复制。身
 你可以直接向 ChatGPT 提出具体网站/域名的增删改或重新分类要求。我应先读取 GitHub 对应文件和现有 SHA，检查重复及潜在冲突，再提交并记录 [变更记录](CHANGELOG.md)。**更新文件内容不会改变订阅 URL**；在 Loon 更新远程订阅即可生效。
 
 建议别对所有分类使用同一个美国策略：AI 服务可以选择稳定美国节点，财经媒体使用美国节点，Google、CDN 等国外通用内容使用 Available；苹果服务默认 DIRECT，遇到确实需要代理的具体服务再另设例外。
+
+## Crypto / Web3 分流（新增于 2026-11-13）
+
+- 订阅地址：https://raw.githubusercontent.com/linjiayinchn/LoonRules/main/rules/Crypto_Web3.list
+- 推荐策略：`US`（现有美国节点组）；如希望另设 Crypto 专用策略组，可在 Loon 中独立创建并绑定。
+- 按钱包、中心化交易所、链网络、DEX/DeFi、链上行情、NFT、区块浏览器、RPC/连接服务、法币出入金、资讯研究十类维护，共 188 条域名后缀。
+- Phantom 的官方主域名为 `phantom.com`；`phantom.app` 为历史域名，仅为旧客户端请求兼容保留，不作为安全推荐。
+- 规则只负责匹配路由，不会自动验证交易所真伪、绕过地域限制或改变网站的法律/服务条款。不要因命中规则就信任登录页面。共享 Google、Apple、支付验证、CDN 域名刻意不泛化匹配，避免影响其他服务。
+- 可与旧 Global / Proxy 规则并存；如网站走错出口，请以 Loon 请求记录中的实际命中结果为准。
