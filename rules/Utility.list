@@ -1,0 +1,27 @@
+# NAME: Utility
+# FORMAT: Loon / Mihomo classical rules
+# Routing policy is selected by the client.
+
+# Utility and documentation services
+DOMAIN-SUFFIX,cdn.tldraw.com
+DOMAIN-SUFFIX,app.buildwithfern.com
+DOMAIN-SUFFIX,prod.ferndocs.com
+DOMAIN-SUFFIX,files.buildwithfern.com
+DOMAIN-SUFFIX,icons.ferndocs.com
+DOMAIN-SUFFIX,ident.me
+DOMAIN-SUFFIX,ipwho.is
+DOMAIN-SUFFIX,ipapi.co
+DOMAIN-SUFFIX,8-lives-cat.io
+
+# CDN and external resources
+DOMAIN-SUFFIX,cloudflare.com
+DOMAIN-SUFFIX,static.cloudflareinsights.com
+DOMAIN-SUFFIX,cdn.jsdelivr.net
+DOMAIN-SUFFIX,unpkg.com
+DOMAIN-SUFFIX,esm.sh
+DOMAIN-SUFFIX,imagedelivery.net
+DOMAIN-SUFFIX,storage.googleapis.com
+DOMAIN-SUFFIX,formulae.brew.sh
+DOMAIN-SUFFIX,i.ytimg.com
+DOMAIN-SUFFIX,yt3.ggpht.com
+DOMAIN-SUFFIX,www.youtube.com
