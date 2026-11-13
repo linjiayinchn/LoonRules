@@ -1,5 +1,2 @@
-# GitHub_Extra: 额外的 GitHub 规则
-# 原 Karing 手工指定的 31 条 GitHub 域名已被 blackmatrix7 GitHub.list 的域名后缀或 github 关键词规则覆盖。
-# 因此此文件暂不添加重复的活动规则；今后发现漏网域名才补充。
-# 上游：https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Loon/GitHub/GitHub.list
-# 绑定 Loon 策略组：美国节点；无有效规则时无需订阅本文件。
+# Optional extension rules.
+# No active rules at present.
