@@ -1,0 +1,13 @@
+# NAME: US_Tools
+# FORMAT: Loon / Mihomo classical rules
+# Routing policy is selected by the client.
+
+DOMAIN-SUFFIX,cdn.tldraw.com
+DOMAIN-SUFFIX,app.buildwithfern.com
+DOMAIN-SUFFIX,prod.ferndocs.com
+DOMAIN-SUFFIX,files.buildwithfern.com
+DOMAIN-SUFFIX,icons.ferndocs.com
+DOMAIN-SUFFIX,ident.me
+DOMAIN-SUFFIX,ipwho.is
+DOMAIN-SUFFIX,ipapi.co
+DOMAIN-SUFFIX,8-lives-cat.io
