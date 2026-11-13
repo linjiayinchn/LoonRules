@@ -1,8 +1,8 @@
 # LoonRules
 
-Loon 分流规则和 FlClash 配置扩展。
+Routing rules for Loon and a configuration extension for FlClash.
 
-- `rules/`：分类规则文件（`.list`）
-- `flclash/LoonRules.js`：FlClash 扩展脚本
+- `rules/` — Rule lists (`.list`)
+- `flclash/LoonRules.js` — FlClash extension script
 
-规则与脚本分别维护，具体分流策略由客户端决定。
+Routing policies are configured in each client.
