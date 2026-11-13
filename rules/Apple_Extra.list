@@ -1,5 +1,2 @@
-# Apple_Extra: 苹果服务个人例外
-# 原 Karing 的 appleid.apple.com、idmsa.apple.com、humb.apple.com、
-# register.appattest.apple.com 建议交给已有的 Apple/Apple_Domain 规则与“苹果服务”策略。
-# 当前不新增重复规则；如有个别服务必须切换出口，再在此添加精准域名。
-# 绑定 Loon 策略组：苹果服务；无有效规则时无需订阅本文件。
+# Optional extension rules.
+# No active rules at present.
