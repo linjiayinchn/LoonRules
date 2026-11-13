@@ -1,9 +1,6 @@
 # NAME: US_Media_Finance
-# FORMAT: Loon remote rule subscription (policy chosen in Loon)
-# SOURCE: Karing backup, custom US routing group, 2026-11-12
-# FINANCE: 69 domain suffixes; NEWS & MEDIA: 77; TOTAL: 146
-# NOTE: Original domains preserved; includes broad suffixes such as yahoo.com, yimg.com, msn.com, and insider.com.
-# NOTE: This file contains routing rules only, no node URLs, credentials, DNS, scripts, or MITM.
+# FORMAT: Loon / Mihomo classical rules
+# Routing policy is selected by the client.
 
 # Financial news, economic research, central banks and exchanges (69)
 DOMAIN-SUFFIX,bloomberg.com
