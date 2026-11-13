@@ -9,7 +9,7 @@ Routing rule lists for Loon, with a small configuration extension for FlClash.
 | `rules/AI.list` | AI services and related tools |
 | `rules/Crypto.list` | Crypto and Web3 services |
 | `rules/US_Media_Finance.list` | Financial and international news sources |
-| `rules/General.list` | Utility, documentation and external resource domains |
+| `rules/Web_Resources.list` | Utility, documentation and external resource domains |
 | `flclash/LoonRules.js` | FlClash configuration extension |
 
 ## Rule format
@@ -24,7 +24,7 @@ Lines starting with `#` are comments. The lists contain matching rules only; pro
 
 ## FlClash
 
-`flclash/LoonRules.js` is an extension for a compatible Mihomo subscription, not a standalone proxy configuration. It converts the main node selector into a latency-based `url-test` group using its underlying nodes, then adds remote rule providers for the AI, Crypto/Web3 and Finance lists. Other subscription rules and groups are retained. The General list is optional and is not loaded by this extension.
+`flclash/LoonRules.js` is an extension for a compatible Mihomo subscription, not a standalone proxy configuration. It converts the main node selector into a latency-based `url-test` group using its underlying nodes, then adds remote rule providers for the AI, Crypto/Web3 and Finance lists. Other subscription rules and groups are retained. The Web_Resources list is optional and is not loaded by this extension.
 
 The rule providers refresh independently. If the extension script itself changes, a client that stores an imported copy may need the script re-imported.
 
