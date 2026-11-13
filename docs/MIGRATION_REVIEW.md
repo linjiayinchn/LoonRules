@@ -7,11 +7,11 @@
 | 来源 | 处理方式 |
 | --- | --- |
 | 财经、投资研究和国际媒体 146 条 | 完整保留在 `US_Media_Finance.list` |
-| AI 56 条 | 29 条在 `AI_Extra.list`；常见 OpenAI/Claude/Gemini/Copilot 等 21 条由 fmz200 AI 上游覆盖；另 6 条通用 Google/Bing API 暂缓强制 AI 分流 |
+| AI 56 条 | 2026-11-12 初期采用 29 条自建补充 + 第三方 AI 主规则的设计；**2026-11-13 已统一为 128 条自主维护的 `AI_Extra.list`**（旧订阅 URL 保留），仍排除 6 条可能影响其他功能的共用 Google/Bing API |
 | GitHub 31 条 | 用 blackmatrix7 GitHub 订阅的 `github` 关键词、域名后缀及 `ghcr.io` 规则覆盖；不重复复制 |
 | 其他技术与认证域名 87 条 | 9 条在 `US_Extra.list`，11 条在 `PROXY_Extra.list`；苹果登录 4 条由 Apple 订阅覆盖；`registry.npmjs.org` 由 GitHub 订阅中 `npmjs.org` 覆盖；`challenges.cloudflare.com`、`cdnjs.cloudflare.com` 被个人 `cloudflare.com` 后缀规则覆盖；其余 60 条暂不强制美国 |
 
-上述去重以 2026-11-12 检查到的上游规则内容为基准。以后上游可能变更，须定期依据真实命中情况复核。
+历史分类及去重基于 2026-11-12 的 Karing 备份；AI 类已在 2026-11-13 升级为独立维护的完整文件。GitHub、Apple 等上游规则仍可能变更，需要根据实际命中情况复核。
 
 ## 暂缓强制美国线路的 AI 共用域名（6 条）
 
