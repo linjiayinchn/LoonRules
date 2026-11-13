@@ -1,12 +1,7 @@
 # NAME: Crypto_Web3
-# SOURCE: Curated LoonRules (official sites, Solana ecosystem, research, existing public rule libraries)
-# UPDATED: 2026-11-13
-# TYPE: Loon remote rules / DOMAIN-SUFFIX
-# POLICY: choose US or Crypto in Loon when subscribing; policy not embedded
-# SAFETY: This is a routing list, NOT a verified trusted-site allowlist. Never enter seed phrases via unfamiliar links.
-# NOTE: Prefer app-specific domain rules; shared Apple/Google/CDN/payment authentication services excluded.
-# NOTE: Phantom current official entry is phantom.com. phantom.app included for historical app compatibility, NOT a recommendation to use it for login.
-# NOTE: Crypto news coindesk.com / cointelegraph.com already exist in US_Media_Finance.list and are omitted to avoid duplication.
+# FORMAT: Loon / Mihomo classical rules
+# Routing policy is selected by the client.
+# Rules are routing matches, not a trust or security allowlist.
 
 # Wallets and key management (only domains, not trust endorsements) [23]
 DOMAIN-SUFFIX,phantom.com
