@@ -1,5 +1,7 @@
-# PROXY_Extra: 原 Karing 使用的国外技术与资源域名（11 条）
-# 绑定 Loon 策略组：Available / 国外服务（不强制美国）
+# NAME: PROXY_Extra
+# FORMAT: Loon / Mihomo classical rules
+# Routing policy is selected by the client.
+
 # 注意：cloudflare.com 可覆盖其子域名，例如 cdnjs.cloudflare.com。
 DOMAIN-SUFFIX,cloudflare.com
 DOMAIN-SUFFIX,static.cloudflareinsights.com
