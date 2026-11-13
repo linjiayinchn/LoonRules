@@ -1,5 +1,7 @@
-# US_Extra: 原 Karing 指定美国线路的网站补充（9 条）
-# 绑定 Loon 策略组：美国节点
+# NAME: US_Extra
+# FORMAT: Loon / Mihomo classical rules
+# Routing policy is selected by the client.
+
 # 排除身份认证、支付、验证码、公共云和大范围 CDN，以免影响其他 App。
 DOMAIN-SUFFIX,cdn.tldraw.com
 DOMAIN-SUFFIX,app.buildwithfern.com
