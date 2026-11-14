@@ -11,6 +11,7 @@ Routing rule lists for Loon, with a small configuration extension for FlClash.
 | `rules/US_Media_Finance.list` | Financial and international news sources |
 | `rules/Utility.list` | Utility, documentation and external resource domains |
 | `flclash/LoonRules.js` | FlClash configuration extension |
+| `plugins/Device_Loopback.plugin` | Optional local developer service loopback for Loon 3.5.3 (1007)+ |
 
 ## Rule format
 
