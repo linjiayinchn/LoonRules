@@ -1,7 +1,7 @@
 #!name = Device Loopback
 #!desc = Local developer service loopback for compatible iOS tools
 #!system = iOS,iPadOS
-#!loon_version = 3.5.1(1007)
+#!loon_version = 3.5.3(1007)
 
 [General]
 include-tun = 10.7.0.1/32
