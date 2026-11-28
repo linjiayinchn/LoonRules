@@ -1,6 +1,10 @@
 # Smart Selection / 智能线路优选
 
-**V0.1.3 — experimental, detection only / 真机测试版，仅检测。**
+**V0.1.4 — experimental, detection only / 真机测试版，仅检测。**
+
+## 0.1.4
+
+连续失败节点定时巡检按 1/2/4/6 小时退避，恢复后重置；手动诊断仍允许复核。单次运行先检测未测/正常节点并给恢复候选保留位置。手动诊断在核心测速完成且有余量时追加 Cloudflare trace 出口观察，仅记录本轮匿名编号（E1/E2 等）和服务数据中心，不持久化真实 IP 或其哈希；不同编号说明观察到不同出口，不证明每个请求均正确走指定节点，仍须核对 Loon 请求记录。未回调时仍停止本批，避免未知并发。
 
 ## 0.1.3
 
@@ -28,7 +32,7 @@ Loon 3.5.1 (983)+: add [Smart_Selection.plugin](https://raw.githubusercontent.co
 
 ## 测量与限制 / Measurement and limitations
 
-Two independent HTTPS HEAD targets (Google and Apple), plus Cloudflare 2 MB download with optional 5 MB refinement for short samples. Requests are serial, directed to named leaf nodes, with certificate checks and redirects/cookies disabled. A valid download must be binary, HTTP 200 and exactly the requested length. The rate includes all request overhead; it is not peak link bandwidth. The second throughput provider and active egress-IP verification are not implemented in V0.1; compare with external speed tests and Loon request records before trusting routing decisions.
+Two independent HTTPS HEAD targets (Google and Apple), plus Cloudflare 2 MB download with optional 5 MB refinement for short samples. Requests are serial, directed to named leaf nodes, with certificate checks and redirects/cookies disabled. A valid download must be binary, HTTP 200 and exactly the requested length. The rate includes all request overhead; it is not peak link bandwidth. The second throughput provider is not implemented. V0.1.4 adds a limited manual egress observation, not definitive per-request route verification; compare with external speed tests and Loon request records before trusting routing decisions.
 
 评分：40%有效吞吐量、20% HTTP 响应时间、30%历史请求成功率、10%同一目标重复请求耗时波动（缺失时其余权重归一化）；速度效用随速度递增而趋于饱和。成功率指探测请求成功率，不是网络丢包率。历史使用近期加权；只有最新有效下载才允许评分；样本不足明确标注。共享数据按网络标识和节点名称复用，各组独立排序。节点名称是临时标识；同名节点在订阅更新后可能发生变化。Wi-Fi SSID 仅本地保存非加密哈希；其他网络身份未核实，历史最多使用 2 小时，不视为独立蜂窝识别。叶子节点之外的嵌套策略、内置策略和常见公告伪节点跳过，不会自行跨组。
 

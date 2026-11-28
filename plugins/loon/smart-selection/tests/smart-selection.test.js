@@ -11,6 +11,10 @@ function mockTests(factory){
         calls.push({method,node:o.node,url:o.url,timeout:o.timeout,secure:o.insecure===false});
         let fail=(custom.fail||[]).includes(o.node);
         if(fail){time+=1000;cb("timeout",null,null);return;}
+        if(o.url.includes("/cdn-cgi/trace")){
+          time+=200;const ip=o.node==="JP-fast"?"203.0.113.11":"203.0.113.22";
+          cb(null,{status:200,headers:{"content-type":"text/plain"}},"ip="+ip+"\ncolo=NRT\n");return;
+        }
         const m=/bytes=(\d+)/.exec(o.url),n=m?Number(m[1]):0;
         if(method==="head"){time+=o.node==="JP-slow"?70:130;cb(null,{status:o.url.includes("gstatic")?204:200,headers:{}},new Uint8Array(0));return;}
         time+=o.node==="JP-slow"?4000:400;
@@ -80,6 +84,18 @@ function mockTests(factory){
     check(mismatch.calls.every(x=>x.node==="HK中转②"),"no fuzzy route substitution");
     const follow=(await factory(many.api).run({}, {tag:"一键诊断"})).report;
     check(follow.batch.tested.every(x=>!mr2.batch.tested.includes(x)),"unattempted nodes prioritized next round");
+    check(oneResult.diagnostic.checks.egressVerification==="distinct_egress_observed","distinct observed egress in manual diagnostic");
+    check(oneResult.batch.egress.length===4&&oneResult.batch.egress.every(x=>/^E\d+$/.test(x.alias)),"anonymous within-run egress aliases");
+    check(!JSON.stringify(oneResult).includes("203.0.113.")&&!one.logs.join("").includes("203.0.113.")&&!Array.from(one.store.values()).join("").includes("203.0.113."),"raw egress never persisted or logged");
+    const fail=mock({fail:["US"]}),fc=factory(fail.api);
+    await fc.run({},{});
+    const next=(await fc.run({},{})).report;
+    check(next.batch.deferred.some(x=>x.node==="US")&&!next.batch.tested.includes("US"),"failed node cooldown for automatic checks");
+    const forced=(await fc.run({},{tag:"一键诊断"})).report;
+    check(forced.batch.tested.includes("US"),"manual diagnostic can retest failed node");
+    fail.advance(7*3600000);
+    const recovery=(await fc.run({},{})).report;
+    check(recovery.batch.tested.includes("US"),"failed nodes re-enter after cooldown");
     return {passed};
   })();
 }

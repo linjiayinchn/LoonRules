@@ -1,5 +1,5 @@
 #!name = Smart Selection
-#!desc = 多策略组线路质量检测（V0.1.3）；独立排名，不自动切换。
+#!desc = 多策略组线路质量检测（V0.1.4）；独立排名，不自动切换。
 #!system = iOS,iPadOS
 #!loon_version = 3.5.1(983)
 
@@ -9,5 +9,5 @@ groups = input,"",type=string,tag=策略组名称,desc=留空发现全部策略�
 autoProbe = switch,false,type=boolean,tag=定时检测,desc=默认关闭；开启后每30分钟分批检测
 
 [Script]
-generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=0.1.3", {${dailyMB}, ${groups}}) with tag="Smart Selection · 一键诊断", timeout=220, img_url="gauge.system"
-cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=0.1.3", {${dailyMB}, ${groups}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220
+generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=0.1.4", {${dailyMB}, ${groups}}) with tag="Smart Selection · 一键诊断", timeout=220, img_url="gauge.system"
+cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=0.1.4", {${dailyMB}, ${groups}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220

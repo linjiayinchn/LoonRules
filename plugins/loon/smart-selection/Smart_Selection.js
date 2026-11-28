@@ -1,8 +1,8 @@
-// Smart Selection 0.1.3 | RoutingRules | detection only
+// Smart Selection 0.1.4 | RoutingRules | detection only
 // Loon 3.5.1 (983)+. No policy writes, MitM, or credential collection.
 function createSmartSelection(api) {
   "use strict";
-  const VERSION="0.1.3", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
+  const VERSION="0.1.4", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
   const MB=1000000, H=3600000, BATCH=6, RUN_BYTES=16*MB, RUN_MS=155000;
   const now=api.now, own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const unique=a=>Array.from(new Set(a));
@@ -154,7 +154,17 @@ function createSmartSelection(api) {
     q.status=latest.ok<latest.attempts?"部分失败":(!net.known||down.length<2||deviation==null?"初步":"已复测");
     return q;
   }
-  function queue(groups,s,net){
+  function retryInfo(r){
+    if(!r||!Array.isArray(r.samples)||!r.samples.length)return {failures:0,retryAt:0};
+    let failures=0;
+    for(let i=r.samples.length-1;i>=0;i--){
+      const x=r.samples[i];
+      if(x.mbps!=null||!x.error)break;
+      failures++;
+    }
+    return {failures,retryAt:failures?r.lastAttempt+Math.min(6,2**Math.min(3,failures-1))*H:0};
+  }
+  function queue(groups,s,net,manual=false){
     const valid=groups.filter(g=>g.nodes.length);
     if(!valid.length)return [];
     const current=unique(valid.filter(g=>g.nodes.includes(g.selected)).map(g=>g.selected));
@@ -169,21 +179,26 @@ function createSmartSelection(api) {
     // First-time coverage takes precedence over retesting previously attempted nodes.
     const merged=unique(urgent.filter(x=>unseen.includes(x)).concat(unseen,urgent,first));
     for(let i=1;i<Math.max(...lists.map(a=>a.length));i++)for(const a of lists)if(a[i]!==undefined&&!merged.includes(a[i]))merged.push(a[i]);
-    return merged;
+    const untested=merged.filter(x=>!getRecord(s,net,x));
+    const normal=merged.filter(x=>getRecord(s,net,x)&&!retryInfo(getRecord(s,net,x)).failures);
+    const retry=merged.filter(x=>{const r=retryInfo(getRecord(s,net,x));return r.failures&&(manual||r.retryAt<=now());})
+      .sort((a,b)=>(getRecord(s,net,a).lastAttempt-getRecord(s,net,b).lastAttempt));
+    // Leave a slot for eligible recovery probes while testing healthy nodes first.
+    return unique(untested.concat(normal.slice(0,BATCH-1),retry,normal.slice(BATCH-1)));
   }
   function reserve(s,opts,run,bytes,token){
     verifyLease(token);
     if(day(now())!==s.day||s.charged+bytes>opts.budget||run.charged+bytes>RUN_BYTES)return false;
     s.charged+=bytes;run.charged+=bytes;save(s);return true;
   }
-  async function request(node,url,method,bytes,s,opts,run,token) {
+  async function request(node,url,method,bytes,s,opts,run,token,trace=false) {
     // Reserve requested payload plus a conservative per-request allowance.
     // This is an estimate, not a physical transport-layer byte counter.
     const allowance=bytes+16000;
     if(!reserve(s,opts,run,allowance,token))return {skipped:true};
     const start=now();
-    const timeout=method==="head"?5000:15000;
-    const options={url,node,timeout,"binary-mode":true,"auto-redirect":false,"auto-cookie":false,insecure:false,headers:{"Cache-Control":"no-cache, no-store","Pragma":"no-cache","Accept-Encoding":"identity"}};
+    const timeout=method==="head"||trace?5000:15000;
+    const options={url,node,timeout,"binary-mode":!trace,"auto-redirect":false,"auto-cookie":false,insecure:false,headers:{"Cache-Control":"no-cache, no-store","Pragma":"no-cache","Accept-Encoding":"identity"}};
     const r=await callbackCall(cb=>api.request(method,options,(err,res,data)=>cb({err,res,data})),timeout+4000);
     const elapsed=Math.max(1,now()-start);
     let n=0;
@@ -199,6 +214,13 @@ function createSmartSelection(api) {
     const status=Number(r.res.status??r.res.statusCode);
     const headers=r.res.headers||{};
     const header=name=>{const k=Object.keys(headers).find(x=>x.toLowerCase()===name);return k?String(headers[k]):"";};
+    if(trace){
+      // Raw IP lives only in this request result and an in-memory map for this run.
+      const body=typeof r.data==="string"&&n<=4096?r.data:"";
+      const ip=(body.match(/^ip=([0-9a-fA-F:.]{3,45})\s*$/m)||[])[1];
+      const colo=(body.match(/^colo=([A-Z]{3})\s*$/m)||[])[1]||null;
+      return {ok:status===200&&!!ip,status,elapsed,n,ip:ip||null,colo};
+    }
     return {ok:true,status,elapsed,n,contentType:header("content-type"),encoding:header("content-encoding"),binary:r.data!=null&&typeof r.data!=="string"&&typeof r.data.byteLength==="number"};
   }
   async function probe(node,s,opts,run,token){
@@ -235,13 +257,13 @@ function createSmartSelection(api) {
       batch:run?{tested:run.tested,chargedMB:Math.round(run.charged/MB*100)/100,stop:run.stop,stopReason:run.stopReason||null,
         elapsedMs:now()-run.start,uniqueCandidates:unique(groups.flatMap(g=>g.nodes)).length,
         remainingThisRun:unique(groups.flatMap(g=>g.nodes)).filter(x=>!run.tested.includes(x)).length,
-        samples:run.samples||[]}:null,
-      groups:groups.map(g=>{const rows=g.nodes.map(node=>({node,current:node===g.selected,...quality(getRecord(s,net,node),net,now())})).sort((a,b)=>(b.score??-1)-(a.score??-1)||a.node.localeCompare(b.node));
+        samples:run.samples||[],egress:run.egress||[],deferred:run.deferred||[]}:null,
+      groups:groups.map(g=>{const rows=g.nodes.map(node=>({node,current:node===g.selected,...quality(getRecord(s,net,node),net,now()),...retryInfo(getRecord(s,net,node))})).sort((a,b)=>(b.score??-1)-(a.score??-1)||a.node.localeCompare(b.node));
         return {name:g.name,selected:g.selected,selectedInCandidates:g.nodes.includes(g.selected),count:g.nodes.length,skipped:g.skipped,error:g.error,discovery:g.discovery,ranked:rows.filter(r=>r.score!=null).length,rows};})};
   }
   function summary(r){
     const lines=[`Smart Selection ${r.version} · 只检测`,`${r.network}｜今日预算 ${r.chargedMB}/${r.budgetMB} MB（预扣估算）`];
-    if(r.batch)lines.push(`本轮检测 ${r.batch.tested.length}/${r.batch.uniqueCandidates} 个去重节点；${r.batch.chargedMB} MB；${r.batch.stopReason||"本批完成"}`);
+    if(r.batch){lines.push(`本轮检测 ${r.batch.tested.length}/${r.batch.uniqueCandidates} 个去重节点；${r.batch.chargedMB} MB；${r.batch.stopReason||"本批完成"}`);if(r.batch.deferred.length)lines.push(`故障退避：${r.batch.deferred.length} 个节点`);if(r.batch.egress.length)lines.push(`出口诊断：${r.batch.egress.filter(x=>x.status==="observed").length} 个成功；出口编号仅本轮有效`);}
     for(const g of r.groups){
       lines.push(`\n${g.name} · ${g.ranked}/${g.count} 已评分${g.skipped?" · 排除 "+g.skipped:""}`);
       if(g.error){lines.push(g.error);continue;}
@@ -265,8 +287,9 @@ function createSmartSelection(api) {
       let s=load();
       const groups=await discover(c,opts,context);
       if(isReport){const report=buildReport(groups,s,net,opts,null);api.log(JSON.stringify(report));return {title:"线路质量报告",content:summary(report),report};}
-      const run={start:now(),charged:0,actual:0,tested:[],samples:[],stop:false,stopReason:null};
-      const candidates=queue(groups,s,net);
+      const run={start:now(),charged:0,actual:0,tested:[],samples:[],egress:[],deferred:[],stop:false,stopReason:null};
+      const candidates=queue(groups,s,net,unified);
+      run.deferred=unique(groups.flatMap(g=>g.nodes)).filter(x=>!candidates.includes(x)).map(node=>({node,...retryInfo(getRecord(s,net,node))}));
       for(const node of candidates){
         if(run.stop){run.stopReason="请求异常，提前结束";break;}
         if(run.tested.length>=BATCH){run.stopReason="达到单轮节点上限";break;}
@@ -278,8 +301,22 @@ function createSmartSelection(api) {
         const sample=await probe(node,s,opts,run,token);
         if(sample.attempts){record(s,net,node,sample);run.tested.push(node);run.samples.push({node,sample});api.log(JSON.stringify({node,sample}));save(s);}
       }
+      // Manual diagnostic: inspect reachable nodes' observed egress after core probes.
+      // Alias labels are local to this run; no raw IP or IP hash is logged or persisted.
+      if(unified&&!run.stop){
+        const aliases=new Map();
+        for(const item of run.samples.filter(x=>x.sample.ok>0)){
+          if(run.stop||now()-run.start>RUN_MS-20000||network(config()).key!==net.key)break;
+          const r=await request(item.node,"https://speed.cloudflare.com/cdn-cgi/trace","get",4096,s,opts,run,token,true);
+          if(r.skipped)break;
+          if(r.ok){
+            if(!aliases.has(r.ip))aliases.set(r.ip,"E"+(aliases.size+1));
+            run.egress.push({node:item.node,status:"observed",alias:aliases.get(r.ip),colo:r.colo,ms:r.elapsed});
+          }else run.egress.push({node:item.node,status:"unverified",error:r.error||"出口响应无法校验"});
+        }
+      }
       s.cursor=(s.cursor||0)+1;prune(s);s.last=now();save(s);
-      if(!run.stopReason)run.stopReason=run.stop?"请求异常，提前结束":candidates.length===0?"没有可测速节点":"本轮候选检测完成";
+      if(!run.stopReason)run.stopReason=run.stop?"请求异常，提前结束":candidates.length===0?(run.deferred.length?"故障节点退避中":"没有可测速节点"):"本轮候选检测完成";
       const report=buildReport(groups,s,net,opts,run);
       report.diagnostic={schema:1,generatedAt:new Date(now()).toISOString(),scope:unified?"all_configured_groups":"configured_scope",checks:{
         groupDiscovery:groups.length>0&&groups.every(g=>!g.error)?"pass":groups.some(g=>!g.error)?"partial":"fail",
@@ -289,7 +326,7 @@ function createSmartSelection(api) {
         downloadProbe:run.samples.some(x=>x.sample.mbps!=null)?"pass":run.samples.length?"no_valid_download":"not_run",
         sharedBudget:s.charged<=opts.budget?"within_limit":"over_estimate",
         ranking:report.groups.some(g=>g.ranked>0)?"available":"not_available",
-        egressVerification:"not_verified",policySwitch:"not_attempted"}};
+        egressVerification:new Set(run.egress.filter(x=>x.status==="observed").map(x=>x.alias)).size>1?"distinct_egress_observed":run.egress.some(x=>x.status==="observed")?"single_egress_observed":"not_verified",policySwitch:"not_attempted"}};
       api.log("SMART_SELECTION_DIAGNOSTIC_BEGIN");
       api.log(JSON.stringify(report));
       api.log("SMART_SELECTION_DIAGNOSTIC_END");
