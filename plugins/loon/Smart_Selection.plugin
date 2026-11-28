@@ -1,5 +1,5 @@
 #!name = Smart Selection
-#!desc = 多策略组智能选路（V1.0.0-rc.1）；按质量独立选路，显式指定管理组。
+#!desc = 多策略组智能选路（V1.0.0-rc.2）；按质量独立选路，显式指定管理组。
 #!system = iOS,iPadOS
 #!loon_version = 3.5.1(983)
 
@@ -12,6 +12,6 @@ notify = switch,false,type=boolean,tag=切换通知,desc=仅确认切换时通�
 autoProbe = switch,true,type=boolean,tag=定时检测,desc=每30分钟分批检测并按设置选路
 
 [Script]
-generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.1", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with tag="Smart Selection · 一键诊断", timeout=220, img_url="gauge.system"
-cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.1", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220
-network-changed then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.1", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 网络变化", timeout=220
+generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.2", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with tag="Smart Selection · 一键诊断", timeout=220, img_url="gauge.system"
+cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.2", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220
+network-changed then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.2", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 网络变化", timeout=220

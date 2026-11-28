@@ -7,8 +7,9 @@ function mockTests(factory){
       let time=Date.UTC(2026,10,28,8),store=new Map(),calls=[],logs=[],writes=0;
       const groups=custom.groups||{"所有可用线路":["JP-fast","JP-slow","US","HK","DIRECT","剩余流量: 100 GB"],"美国线路":["US"],"香港线路":["HK"],"日本线路":["JP-fast","JP-slow"]};
       const selected=custom.selected||{"所有可用线路":"JP-slow","美国线路":"US","香港线路":"HK","日本线路":"JP-slow"};
-      const changes=[];const api={setSelected:(g,n)=>{changes.push([g,n]);if(custom.rejectSwitch)return false;selected[g]=n;return true;},now:()=>time,random:()=>.123,config:()=>JSON.stringify({all_policy_groups:Object.keys(groups),all_buildin_nodes:["DIRECT","REJECT"],ssid:"mock-wifi"}),members:(n,cb)=>cb(JSON.stringify(custom.typed?groups[n].map(x=>typeof x==="string"?{name:x,type:Object.prototype.hasOwnProperty.call(groups,x)?"group":"node"}:x):groups[n])),selected:n=>selected[n]||"",read:k=>store.get(k)||"",write:(k,v)=>{writes++;if(custom.writeFail)return false;store.set(k,v);return true;},timer:()=>0,clear:()=>{},log:s=>logs.push(s),request:(method,o,cb)=>{
+      let timerCallback=null;const changes=[];const api={setSelected:(g,n)=>{changes.push([g,n]);if(custom.rejectSwitch)return false;selected[g]=n;return true;},now:()=>time,random:()=>.123,config:()=>JSON.stringify({all_policy_groups:Object.keys(groups),all_buildin_nodes:["DIRECT","REJECT"],ssid:"mock-wifi"}),members:(n,cb)=>cb(JSON.stringify(custom.typed?groups[n].map(x=>typeof x==="string"?{name:x,type:Object.prototype.hasOwnProperty.call(groups,x)?"group":"node"}:x):groups[n])),selected:n=>selected[n]||"",read:k=>store.get(k)||"",write:(k,v)=>{writes++;if(custom.writeFail)return false;store.set(k,v);return true;},timer:cb=>{timerCallback=cb;return 0;},clear:()=>{timerCallback=null;},log:s=>logs.push(s),request:(method,o,cb)=>{
         calls.push({method,node:o.node,url:o.url,timeout:o.timeout,secure:o.insecure===false});
+        if((custom.watchdog||[]).includes(o.node)){time+=o.timeout+4000;const fire=timerCallback;if(fire)fire();return;}
         let fail=(custom.fail||[]).includes(o.node);
         if(fail){time+=1000;cb("timeout",null,null);return;}
         if(o.url.includes("/cdn-cgi/trace")){
@@ -122,6 +123,15 @@ function mockTests(factory){
     const pr=(await ph.run({dailyMB:50},{tag:"质量报告"})).report;
     const hour=new Date(phased.api.now()).getHours(),max=50*(hour<12?.5:hour<18?.75:1);
     check(pr.chargedMB<=max,"automatic phased budget");
+    const stalledOptions={fail:["US"],watchdog:[]},stalled=mock(stalledOptions),sc=factory(stalled.api);
+    await sc.run(settings,{});stalled.advance(31*60000);await sc.run(settings,{});stalled.advance(31*60000);
+    stalledOptions.watchdog.push("US");
+    const sr=(await sc.run(settings,{tag:"一键诊断"})).report;
+    check(sr.batch.stop&&sr.batch.decisions.find(d=>d.group==="日本线路").switched===true,"healthy group decision survives unrelated late watchdog");
+    check(stalled.selected["日本线路"]==="JP-fast"&&stalled.changes.length===1,"only managed group changed before watchdog");
+    check(sr.batch.decisions.find(d=>d.group==="美国线路").reason==="observe_only","unmanaged group explicitly observe-only after interruption");
+    check(sr.diagnostic.settings.managedGroups[0]==="日本线路"&&sr.diagnostic.settings.autoSelect,"diagnostic configuration visible");
+    check(new Set(sr.batch.decisions.map(d=>d.group)).size===sr.groups.length,"one decision per group per batch");
     return {passed};
   })();
 }

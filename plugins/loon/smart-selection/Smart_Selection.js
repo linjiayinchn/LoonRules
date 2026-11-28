@@ -1,8 +1,8 @@
-// Smart Selection 1.0.0-rc.1 | RoutingRules | quality-based selection
+// Smart Selection 1.0.0-rc.2 | RoutingRules | quality-based selection
 // Loon 3.5.1 (983)+. Explicitly managed groups only; no MitM or credential collection.
 function createSmartSelection(api) {
   "use strict";
-  const VERSION="1.0.0-rc.1", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
+  const VERSION="1.0.0-rc.2", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
   const MB=1000000, H=3600000, BATCH=6, RUN_BYTES=16*MB, RUN_MS=155000;
   const now=api.now, own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const unique=a=>Array.from(new Set(a));
@@ -369,6 +369,18 @@ function createSmartSelection(api) {
       const probeOpts={...opts,budget:cap};
       const run={start:now(),charged:0,actual:0,tested:[],samples:[],egress:[],deferred:[],decisions:[],stop:false,stopReason:null};
       const candidates=queue(groups,s,net,unified);
+      const decided=new Set();
+      async function checkpoint(final=false){
+        if(run.stop||network(config()).key!==net.key)return;
+        const tested=new Map(run.samples.map(x=>[x.node,x.sample]));
+        const ready=groups.filter(g=>!decided.has(g.name)&&(final||(
+          opts.autoSelect&&opts.managed.includes(g.name)&&
+          tested.has(g.selected)&&g.nodes.some(n=>n!==g.selected&&tested.get(n)?.mbps!=null)
+        )));
+        if(!ready.length)return;
+        const results=await manage(ready,s,net,run,opts,token);
+        for(const d of results){decided.add(d.group);run.decisions.push(d);}
+      }
       run.deferred=unique(groups.flatMap(g=>g.nodes)).filter(x=>!candidates.includes(x)).map(node=>({node,...retryInfo(getRecord(s,net,node))}));
       // Manual diagnostic: inspect reachable nodes' observed egress after core probes.
       // Alias labels are local to this run; no raw IP or IP hash is logged or persisted.
@@ -386,7 +398,10 @@ function createSmartSelection(api) {
         }
       }
       for(const node of candidates){
-        if(retryInfo(getRecord(s,net,node)).failures)await observeEgress();
+        if(retryInfo(getRecord(s,net,node)).failures){
+          await checkpoint();
+          await observeEgress();
+        }
         if(run.stop){run.stopReason="请求异常，提前结束";break;}
         if(run.tested.length>=BATCH){run.stopReason="达到单轮节点上限";break;}
         if(now()-run.start>RUN_MS-20000){run.stopReason="达到单轮时间上限";break;}
@@ -397,18 +412,21 @@ function createSmartSelection(api) {
         const sample=await probe(node,s,probeOpts,run,token);
         if(sample.attempts){record(s,net,node,sample);run.tested.push(node);run.samples.push({node,sample});api.log(JSON.stringify({node,sample}));save(s);}
       }
+      // Complete eligible group decisions before optional diagnostics can stall.
+      await checkpoint(true);
       await observeEgress();
-      if(!run.stop&&network(config()).key===net.key){
-        run.decisions=await manage(groups,s,net,run,opts,token);
-        if(opts.notify&&typeof api.notify==="function"){
-          const changes=run.decisions.filter(x=>x.switched);
-          if(changes.length)try{api.notify("Smart Selection",changes.map(x=>x.group+": "+x.to).join("\n"));}catch(_){}
-        }
-      }else run.decisions=groups.map(g=>({group:g.name,from:g.selected,to:null,reason:"run_interrupted"}));
+      for(const g of groups.filter(x=>!decided.has(x.name))){
+        const reason=!opts.autoSelect||!opts.managed.includes(g.name)?"observe_only":g.error||!g.nodes.includes(g.selected)?"selection_not_in_candidates":"run_interrupted";
+        run.decisions.push({group:g.name,from:g.selected,to:null,reason});
+      }
+      if(opts.notify&&typeof api.notify==="function"){
+        const changes=run.decisions.filter(x=>x.switched);
+        if(changes.length)try{api.notify("Smart Selection",changes.map(x=>x.group+": "+x.to).join("\n"));}catch(_){}
+      }
       s.cursor=(s.cursor||0)+1;prune(s);s.last=now();save(s);
       if(!run.stopReason)run.stopReason=run.stop?"请求异常，提前结束":candidates.length===0?(run.deferred.length?"故障节点退避中":"没有可测速节点"):"本轮候选检测完成";
       const report=buildReport(groups,s,net,opts,run);
-      report.diagnostic={schema:1,generatedAt:new Date(now()).toISOString(),scope:unified?"all_configured_groups":"configured_scope",checks:{
+      report.diagnostic={schema:2,settings:{autoSelect:opts.autoSelect,managedGroups:opts.managed,matchedManagedGroups:groups.filter(g=>opts.managed.includes(g.name)).map(g=>g.name)},generatedAt:new Date(now()).toISOString(),scope:unified?"all_configured_groups":"configured_scope",checks:{
         groupDiscovery:groups.length>0&&groups.every(g=>!g.error)?"pass":groups.some(g=>!g.error)?"partial":"fail",
         selectedRead:groups.every(g=>g.selected)?"pass":"partial",
         selectedMembership:groups.every(g=>g.selected&&g.nodes.includes(g.selected))?"pass":"mismatch_or_unknown",
