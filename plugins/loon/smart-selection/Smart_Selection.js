@@ -1,8 +1,8 @@
-// Smart Selection 0.1.4 | RoutingRules | detection only
-// Loon 3.5.1 (983)+. No policy writes, MitM, or credential collection.
+// Smart Selection 1.0.0-rc.1 | RoutingRules | quality-based selection
+// Loon 3.5.1 (983)+. Explicitly managed groups only; no MitM or credential collection.
 function createSmartSelection(api) {
   "use strict";
-  const VERSION="0.1.4", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
+  const VERSION="1.0.0-rc.1", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
   const MB=1000000, H=3600000, BATCH=6, RUN_BYTES=16*MB, RUN_MS=155000;
   const now=api.now, own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const unique=a=>Array.from(new Set(a));
@@ -25,7 +25,8 @@ function createSmartSelection(api) {
     let budget=Number(args.dailyMB==null?200:args.dailyMB);
     if(![50,100,200,300].includes(budget))throw Error("不支持的每日预算");
     const groups=String(args.groups||"").split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);
-    return {budget:budget*MB,groups:unique(groups)};
+    const managed=String(args.managedGroups||"").split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);
+    return {budget:budget*MB,groups:unique(groups),managed:unique(managed),autoSelect:args.autoSelect!==false&&args.autoSelect!=="false",notify:args.notify===true||args.notify==="true"};
   }
   function network(c){
     // Never persist SSID itself. An unidentified network is deliberately not trusted
@@ -125,9 +126,6 @@ function createSmartSelection(api) {
   function prune(s){
     for(const k of Object.keys(s.records)){const r=s.records[k];if(!r||!fresh({at:r.lastAttempt},now(),7*24*H))delete s.records[k];}
     const keys=Object.keys(s.records).sort((a,b)=>s.records[b].lastAttempt-s.records[a].lastAttempt);
-    for(const k of keys.slice(0,Math.max(0,keys.length-600))){ // delete oldest only
-      // no-op here; actual bound below
-    }
     for(const k of keys.slice(600))delete s.records[k];
   }
   function quality(r,net,t){
@@ -251,18 +249,94 @@ function createSmartSelection(api) {
     p.at=now();
     return p;
   }
+  // Decision engine: pure scoring and selection; never mutates Loon configuration.
+  function choose(g,s,net,run,opts,control,t){
+    const current=g.selected;
+    const result=(reason,extra={})=>({group:g.name,from:current,to:null,reason,...extra});
+    if(!opts.autoSelect||!opts.managed.includes(g.name))return result("observe_only");
+    if(g.error||!g.nodes.includes(current))return result("selection_not_in_candidates");
+    if(!net.known)return result("network_identity_unknown");
+    if(!control||typeof control!=="object")return result("initial_baseline");
+    if(control.observed!==current)return result("external_selection_hold");
+    if(t<(control.holdUntil||0))return result("manual_hold");
+    const currentRec=getRecord(s,net,current),cq=quality(currentRec,net,t);
+    const thisCurrent=run.samples.find(x=>x.node===current)?.sample;
+    // A watchdog expiry means callback not observed, not a confirmed node failure.
+    const completeFailure=x=>x&&x.mbps==null&&x.attempts>=3&&x.error&&!String(x.error).includes("回调超时");
+    const lastTwo=currentRec?.samples?.slice(-2)||[];
+    const bad=lastTwo.length===2&&lastTwo.every(x=>fresh(x,t,2*H)&&completeFailure(x))&&completeFailure(thisCurrent);
+    const eligible=g.nodes.filter(x=>x!==current).map(node=>({node,q:quality(getRecord(s,net,node),net,t),record:getRecord(s,net,node)}))
+      .filter(x=>x.q.score!=null&&x.q.samples>=2&&x.q.success>=80&&x.record&&t-x.record.lastDownload<=H&&x.record.samples.filter(y=>Number.isFinite(y.mbps)&&fresh(y,t,24*H)).length>=2)
+      .sort((a,b)=>b.q.score-a.q.score);
+    const best=eligible.find(x=>run.samples.some(y=>y.node===x.node&&y.sample.mbps!=null&&!String(y.sample.error||"").includes("回调超时")));
+    if(!best)return result("no_fresh_confirmed_candidate");
+    if(bad)return result("confirmed_failure",{to:best.node,urgent:true,score:best.q.score,previousScore:cq.score});
+    if(t-(control.lastSwitch||0)<30*60000)return result("switch_cooldown");
+    if(cq.score==null||cq.samples<2||!thisCurrent||thisCurrent.mbps==null)return result("current_not_comparable");
+    const gain=best.q.score-cq.score;
+    const significant=gain>=10||(gain>=5&&gain>=.15*cq.score&&best.q.speed>=1.25*cq.speed);
+    if(!significant)return result("no_material_gain",{gain});
+    const sampleAt=best.record.lastDownload;
+    const prior=control.pending;
+    if(!prior||prior.node!==best.node||prior.sampleAt===sampleAt||prior.current!==current||t-prior.sampleAt>3*H)return result("awaiting_confirmation",{candidate:best.node,gain,sampleAt});
+    return result("confirmed_improvement",{to:best.node,gain,score:best.q.score,previousScore:cq.score});
+  }
+  async function manage(groups,s,net,run,opts,token){
+    if(!s.control||typeof s.control!=="object"||Array.isArray(s.control))s.control={};
+    const decisions=[];
+    for(const g of groups){
+      const key=JSON.stringify([net.key,g.name]);
+      const old=own(s.control,key)?s.control[key]:null;
+      const state=old?{...old}:{observed:g.selected,holdUntil:0,lastSwitch:0,pending:null};
+      const t=now();
+      let d;
+      try{
+        d=choose(g,s,net,run,opts,old,t);
+        if(d.reason==="external_selection_hold"){state.holdUntil=t+2*H;state.pending=null;}
+        if(d.reason==="awaiting_confirmation")state.pending={node:d.candidate,current:g.selected,sampleAt:d.sampleAt};
+        else if(!["confirmed_improvement","confirmed_failure","no_fresh_confirmed_candidate","current_not_comparable"].includes(d.reason))state.pending=null;
+        if(state.pending&&t-state.pending.sampleAt>3*H)state.pending=null;
+        if(d.to){
+          verifyLease(token);
+          // Read exact live membership and selection before writing.
+          const latest=await discover(config(),{...opts,groups:[g.name]},{});
+          if(network(config()).key!==net.key||latest.length!==1||latest[0].error||latest[0].selected!==g.selected||!latest[0].nodes.includes(d.to)||!latest[0].nodes.includes(g.selected)){
+            d={...d,reason:"preflight_changed",to:null};
+            state.pending=null;
+          }else if(typeof api.setSelected!=="function"){
+            d={...d,reason:"selection_api_unavailable",to:null};
+          }else{
+            verifyLease(token);
+            // Persist intent before mutation. A later run detects interruption.
+            state.pending=null;state.holdUntil=t+30*60000;
+            s.control[key]=state;save(s);
+            const target=d.to;
+            const accepted=api.setSelected(g.name,target)===true;
+            const actual=api.selected(g.name);
+            d={...d,accepted,actual,switched:accepted&&actual===target};
+            if(d.switched){state.observed=actual;state.lastSwitch=t;state.holdUntil=0;g.selected=actual;}
+            else {state.observed=validName(actual)?actual:g.selected;state.holdUntil=t+2*H;d.reason="switch_not_confirmed";}
+          }
+        }
+      }catch(_){d={group:g.name,from:g.selected,to:null,reason:"decision_or_api_error"};state.pending=null;state.holdUntil=t+2*H;}
+      if(!d.switched&&d.reason!=="switch_not_confirmed")state.observed=g.selected;
+      s.control[key]=state;decisions.push(d);save(s);
+    }
+    const keys=Object.keys(s.control);for(const k of keys.slice(0,Math.max(0,keys.length-300)))delete s.control[k];
+    return decisions;
+  }
   function buildReport(groups,s,net,opts,run){
-    return {version:VERSION,mode:"只检测，不切换",network:net.label,networkIdentified:net.known,
+    return {version:VERSION,mode:opts.autoSelect&&opts.managed.length?"智能选路":"观察模式",network:net.label,networkIdentified:net.known,
       day:s.day,budgetMB:opts.budget/MB,chargedMB:Math.round(s.charged/MB*100)/100,receivedMB:Math.round(s.actual/MB*100)/100,
       batch:run?{tested:run.tested,chargedMB:Math.round(run.charged/MB*100)/100,stop:run.stop,stopReason:run.stopReason||null,
         elapsedMs:now()-run.start,uniqueCandidates:unique(groups.flatMap(g=>g.nodes)).length,
         remainingThisRun:unique(groups.flatMap(g=>g.nodes)).filter(x=>!run.tested.includes(x)).length,
-        samples:run.samples||[],egress:run.egress||[],deferred:run.deferred||[]}:null,
+        samples:run.samples||[],egress:run.egress||[],deferred:run.deferred||[],decisions:run.decisions||[]}:null,
       groups:groups.map(g=>{const rows=g.nodes.map(node=>({node,current:node===g.selected,...quality(getRecord(s,net,node),net,now()),...retryInfo(getRecord(s,net,node))})).sort((a,b)=>(b.score??-1)-(a.score??-1)||a.node.localeCompare(b.node));
         return {name:g.name,selected:g.selected,selectedInCandidates:g.nodes.includes(g.selected),count:g.nodes.length,skipped:g.skipped,error:g.error,discovery:g.discovery,ranked:rows.filter(r=>r.score!=null).length,rows};})};
   }
   function summary(r){
-    const lines=[`Smart Selection ${r.version} · 只检测`,`${r.network}｜今日预算 ${r.chargedMB}/${r.budgetMB} MB（预扣估算）`];
+    const lines=[`Smart Selection ${r.version} · ${r.mode}`,`${r.network}｜今日预算 ${r.chargedMB}/${r.budgetMB} MB（预扣估算）`];
     if(r.batch){lines.push(`本轮检测 ${r.batch.tested.length}/${r.batch.uniqueCandidates} 个去重节点；${r.batch.chargedMB} MB；${r.batch.stopReason||"本批完成"}`);if(r.batch.deferred.length)lines.push(`故障退避：${r.batch.deferred.length} 个节点`);if(r.batch.egress.length)lines.push(`出口诊断：${r.batch.egress.filter(x=>x.status==="observed").length} 个成功；出口编号仅本轮有效`);}
     for(const g of r.groups){
       lines.push(`\n${g.name} · ${g.ranked}/${g.count} 已评分${g.skipped?" · 排除 "+g.skipped:""}`);
@@ -272,7 +346,9 @@ function createSmartSelection(api) {
       if(g.rows.length>5)lines.push("其余节点详见脚本日志");
     }
     if(!r.networkIdentified)lines.push("\n网络身份未识别，历史数据仅短期使用。");
-    lines.push("\n本次运行的完整诊断、原始测速及各组排名已合并至同一日志，无需另行运行质量报告。未执行任何策略切换。");
+    const reasons={observe_only:"仅观察",selection_not_in_candidates:"当前节点不匹配，保护中",network_identity_unknown:"网络身份不明，暂不切换",initial_baseline:"建立基线",external_selection_hold:"检测到外部切换，暂停接管2小时",manual_hold:"手动选择保护",no_fresh_confirmed_candidate:"无新鲜且已复测候选",switch_cooldown:"切换冷却中",current_not_comparable:"当前节点缺少可比较样本",no_material_gain:"优势不足，保持当前",awaiting_confirmation:"等待下一轮确认",preflight_changed:"配置已变化，取消切换",selection_api_unavailable:"切换接口不可用",switch_not_confirmed:"切换未确认，暂停接管",decision_or_api_error:"决策接口异常",run_interrupted:"本轮请求未确认结束，暂停切换"};
+    if(r.batch&&r.batch.decisions.length){lines.push("\n选路决策：");for(const d of r.batch.decisions)lines.push(d.group+"："+(d.switched?d.from+" → "+d.to:reasons[d.reason]||d.reason));}
+    lines.push("\n完整诊断已合并至同一日志，无需另行运行质量报告。");
     return lines.join("\n");
   }
   async function run(args,context={}){
@@ -287,7 +363,11 @@ function createSmartSelection(api) {
       let s=load();
       const groups=await discover(c,opts,context);
       if(isReport){const report=buildReport(groups,s,net,opts,null);api.log(JSON.stringify(report));return {title:"线路质量报告",content:summary(report),report};}
-      const run={start:now(),charged:0,actual:0,tested:[],samples:[],egress:[],deferred:[],stop:false,stopReason:null};
+      // Preserve a late-day reserve during automatic checks; manual runs use the full cap.
+      const hour=new Date(now()).getHours();
+      const cap=tag.includes("定时检测")||tag.includes("网络变化")?Math.floor(opts.budget*(hour<12?.5:hour<18?.75:1)):opts.budget;
+      const probeOpts={...opts,budget:cap};
+      const run={start:now(),charged:0,actual:0,tested:[],samples:[],egress:[],deferred:[],decisions:[],stop:false,stopReason:null};
       const candidates=queue(groups,s,net,unified);
       run.deferred=unique(groups.flatMap(g=>g.nodes)).filter(x=>!candidates.includes(x)).map(node=>({node,...retryInfo(getRecord(s,net,node))}));
       // Manual diagnostic: inspect reachable nodes' observed egress after core probes.
@@ -297,7 +377,7 @@ function createSmartSelection(api) {
         if(!unified||run.stop)return;
         for(const item of run.samples.filter(x=>x.sample.ok>0&&!run.egress.some(e=>e.node===x.node))){
           if(run.stop||now()-run.start>RUN_MS-20000||network(config()).key!==net.key)break;
-          const r=await request(item.node,"https://speed.cloudflare.com/cdn-cgi/trace","get",4096,s,opts,run,token,true);
+          const r=await request(item.node,"https://speed.cloudflare.com/cdn-cgi/trace","get",4096,s,probeOpts,run,token,true);
           if(r.skipped)break;
           if(r.ok){
             if(!aliases.has(r.ip))aliases.set(r.ip,"E"+(aliases.size+1));
@@ -310,14 +390,21 @@ function createSmartSelection(api) {
         if(run.stop){run.stopReason="请求异常，提前结束";break;}
         if(run.tested.length>=BATCH){run.stopReason="达到单轮节点上限";break;}
         if(now()-run.start>RUN_MS-20000){run.stopReason="达到单轮时间上限";break;}
-        if(s.charged+2*MB+48000>opts.budget){run.stopReason="当日剩余预算不足";break;}
+        if(s.charged+2*MB+48000>probeOpts.budget){run.stopReason="当日剩余预算不足";break;}
         if(run.charged+2*MB+48000>RUN_BYTES){run.stopReason="达到单轮流量上限";break;}
         // Abort if identified Wi-Fi changes during a batch.
         if(network(config()).key!==net.key){run.stop=true;run.stopReason="网络环境变化";break;}
-        const sample=await probe(node,s,opts,run,token);
+        const sample=await probe(node,s,probeOpts,run,token);
         if(sample.attempts){record(s,net,node,sample);run.tested.push(node);run.samples.push({node,sample});api.log(JSON.stringify({node,sample}));save(s);}
       }
       await observeEgress();
+      if(!run.stop&&network(config()).key===net.key){
+        run.decisions=await manage(groups,s,net,run,opts,token);
+        if(opts.notify&&typeof api.notify==="function"){
+          const changes=run.decisions.filter(x=>x.switched);
+          if(changes.length)try{api.notify("Smart Selection",changes.map(x=>x.group+": "+x.to).join("\n"));}catch(_){}
+        }
+      }else run.decisions=groups.map(g=>({group:g.name,from:g.selected,to:null,reason:"run_interrupted"}));
       s.cursor=(s.cursor||0)+1;prune(s);s.last=now();save(s);
       if(!run.stopReason)run.stopReason=run.stop?"请求异常，提前结束":candidates.length===0?(run.deferred.length?"故障节点退避中":"没有可测速节点"):"本轮候选检测完成";
       const report=buildReport(groups,s,net,opts,run);
@@ -329,14 +416,14 @@ function createSmartSelection(api) {
         downloadProbe:run.samples.some(x=>x.sample.mbps!=null)?"pass":run.samples.length?"no_valid_download":"not_run",
         sharedBudget:s.charged<=opts.budget?"within_limit":"over_estimate",
         ranking:report.groups.some(g=>g.ranked>0)?"available":"not_available",
-        egressVerification:new Set(run.egress.filter(x=>x.status==="observed").map(x=>x.alias)).size>1?"distinct_egress_observed":run.egress.some(x=>x.status==="observed")?"single_egress_observed":"not_verified",policySwitch:"not_attempted"}};
+        egressVerification:new Set(run.egress.filter(x=>x.status==="observed").map(x=>x.alias)).size>1?"distinct_egress_observed":run.egress.some(x=>x.status==="observed")?"single_egress_observed":"not_verified",policySwitch:run.decisions.some(x=>x.switched)?"confirmed":run.decisions.some(x=>x.accepted!==undefined)?"attempted_unconfirmed":"not_attempted"}};
       api.log("SMART_SELECTION_DIAGNOSTIC_BEGIN");
       api.log(JSON.stringify(report));
       api.log("SMART_SELECTION_DIAGNOSTIC_END");
       return {title:"一键诊断完成",content:summary(report),report};
     }finally{release(token);}
   }
-  return {run,quality,queue,options,network,newState,buildReport};
+  return {run,quality,queue,options,network,newState,buildReport,choose};
 }
 
 if (typeof module !== "undefined" && module.exports) {
@@ -347,6 +434,8 @@ if (typeof module !== "undefined" && module.exports) {
     config: () => $config.getConfig(),
     members: (name, cb) => $config.getSubPolicies(name, cb),
     selected: name => $config.getSelectedPolicy(name),
+    setSelected: (name,node) => $config.setSelectPolicy(name,node),
+    notify: (title,body) => $notification.post(title,"",body),
     read: key => $persistentStore.read(key),
     write: (key, value) => $persistentStore.write(value, key),
     request: (method, opts, cb) => $httpClient[method](opts, cb),

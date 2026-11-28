@@ -1,13 +1,17 @@
 #!name = Smart Selection
-#!desc = 多策略组线路质量检测（V0.1.4）；独立排名，不自动切换。
+#!desc = 多策略组智能选路（V1.0.0-rc.1）；按质量独立选路，显式指定管理组。
 #!system = iOS,iPadOS
 #!loon_version = 3.5.1(983)
 
 [Argument]
 dailyMB = select,200,100,50,300,type=number,tag=每日下载预算（MB）,desc=所有策略组共享的预扣预算
 groups = input,"",type=string,tag=策略组名称,desc=留空发现全部策略组；多个组用英文分号隔开
-autoProbe = switch,false,type=boolean,tag=定时检测,desc=默认关闭；开启后每30分钟分批检测
+managedGroups = input,"",type=string,tag=自动选路管理组,desc=填入已改为 select 的组名（英文分号分隔）；留空只观察
+autoSelect = switch,true,type=boolean,tag=自动选路,desc=仅接管明确指定的管理组；关闭即停止切换
+notify = switch,false,type=boolean,tag=切换通知,desc=仅确认切换时通知
+autoProbe = switch,true,type=boolean,tag=定时检测,desc=每30分钟分批检测并按设置选路
 
 [Script]
-generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=0.1.4", {${dailyMB}, ${groups}}) with tag="Smart Selection · 一键诊断", timeout=220, img_url="gauge.system"
-cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=0.1.4", {${dailyMB}, ${groups}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220
+generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.1", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with tag="Smart Selection · 一键诊断", timeout=220, img_url="gauge.system"
+cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.1", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220
+network-changed then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.1", {${dailyMB}, ${groups}, ${managedGroups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 网络变化", timeout=220

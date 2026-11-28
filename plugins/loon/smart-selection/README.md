@@ -1,55 +1,57 @@
 # Smart Selection / 智能线路优选
 
-**V0.1.4 — experimental, detection only / 真机测试版，仅检测。**
+**1.0.0-rc.1 — 1.0 功能候选版 / 1.0 release candidate. 真机自动切换尚待集中验收。**
 
-## 0.1.4
+Smart Selection 为 Loon 的指定策略组独立执行质量检测和智能选路。测速数据跨组去重复用，不改变分流规则、机场订阅或其他未管理策略组。
 
-连续失败节点定时巡检按 1/2/4/6 小时退避，恢复后重置；手动诊断仍允许复核。单次运行先检测未测/正常节点并给恢复候选保留位置。手动诊断在核心测速完成且有余量时追加 Cloudflare trace 出口观察（进入已知故障节点复检前，先观察已完成的正常节点），仅记录本轮匿名编号（E1/E2 等）和服务数据中心，不持久化真实 IP 或其哈希；不同编号说明观察到不同出口，不证明每个请求均正确走指定节点，仍须核对 Loon 请求记录。未回调时仍停止本批，避免未知并发。
+Smart Selection measures and selects nodes independently within explicitly managed Loon policy groups, sharing probe data without changing routing rules or subscriptions.
 
-## 0.1.3
+## 安装 / Installation
 
-真机测试后调整：轻量请求超时 5 秒，下载 15 秒；回调 watchdog 额外 4 秒，未确认请求结束时仍安全停止。优先补测未尝试节点；已选节点名称不匹配时明确标注，绝不模糊匹配。耗时波动仅比较同一目标的重复请求；首轮缺少波动数据时按其余权重归一化，仍标为初步。旧记录无需迁移。
+Loon 3.5.1 (983)+: [Smart_Selection.plugin](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Smart_Selection.plugin).
 
-## 0.1.2
+1. 更新或添加远程插件。检测范围「策略组名称」留空发现所有组，或填写指定组。
+2. **启用自动选路：**将希望接管的组从 `url-test` 改为 `select`，保留名称、节点筛选、规则绑定；在「自动选路管理组」填入这些组的精确名称，以英文分号隔开。管理组为空不会修改任何组。默认自动选路开关开启；关掉即可停止切换。
+3. 默认每30分钟巡检，网络变化也触发；iOS 后台不保证准时。执行「一键诊断」可立即收集一份包含检测、评分、预算、出口观察及选路决定的日志。
+4. 不使用 MitM，无额外服务端。只管理叶子节点组。组类型无法可靠从公开配置摘要读取，须由用户确认已设为 select。
 
-统一手动入口「一键诊断」：读取全部指定策略组，运行本轮全部检测项目，并在同一脚本日志内输出组内候选结构、逐节点原始请求结果、排名、预算、覆盖范围、停止原因及诊断状态。只需导出这一次日志。单轮上限仍为 6 节点/16 MB，未覆盖节点后续轮询，不宣称单次测完所有节点。旧版质量报告入口仅保留代码兼容。
+For automatic selection, convert the desired groups to `select`, preserve their names and membership, and enter their exact names in Managed Groups. The auto-select toggle is enabled by default, but an empty allowlist makes the plugin observe-only. Scheduled checks are enabled by default; use the one-click diagnostic for a unified log.
 
-## 0.1.1
+## 参数 / Settings
 
-修复真机候选节点对象数组解析：支持 `{name,type}` 和旧版名称字符串数组；仅检测叶子节点，未知类型跳过；日志新增数据结构计数，不输出原始节点描述。保留既有本地预算与历史记录。
+| 参数 / Setting | 默认 / Default |
+| --- | --- |
+| 每日共享预算 / Shared daily budget | 200 MB (50/100/200/300 selectable) |
+| 单轮限制 / Batch cap | 6 nodes / 16 MB / 155 s probing |
+| 定时与网络变化 / Scheduled and network-change checks | Enabled, every 30 min |
+| 自动选路 / Auto selection | Enabled for explicitly managed groups |
+| 切换通知 / Switch notification | Off |
+| 普通切换冷却 / Switch cooldown | 30 min |
+| 外部选择保护 / External selection hold | 2 h |
 
-## 安装 / Install
+## 测量与决策 / Measurement and decisions
 
-Loon 3.5.1 (983)+: add [Smart_Selection.plugin](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Smart_Selection.plugin) as a remote plugin. 不需要修改现有 url-test 策略组、规则、MitM 或订阅。
+- Google/Apple HTTPS HEAD (5 s timeout), Cloudflare binary download (2 MB, adaptive 5 MB, 15 s timeout). Valid download requires HTTP 200 and exact byte length; TLS verified, no redirects. Serial probing, pre-charge requested bytes plus 16 KB allowance. Effective end-to-end throughput, not peak bandwidth.
+- 评分：下载40%、HTTP响应20%、历史请求成功率30%、同目标重复请求波动10%；缺少波动时其余权重归一化。历史速度近期加权，未知及过期样本不用于切换。失败自动复检退避1/2/4/6小时；优先覆盖未测节点。
+- 普通切换须当前与候选本轮均有可比较下载、候选至少2次有效样本、成功率≥80%、下载记录不超过1小时；评分至少提升10分，或同时提升至少5分及15%且速度提升至少25%，连续两轮确认。已确认故障（连续两轮完整检测且无有效下载）允许跳过普通冷却；未回调不能当作已确认故障。当前与候选必须精确属于同一组。
+- 独立决策，操作前重新读取成员和当前选择，写入后回读验证；外部选择保护2小时，切换失败保护2小时。网络身份未识别时不自动修改策略；网络变化触发重检，Wi-Fi 历史按本地 SSID 哈希区分。回调未结束或网络变化的本轮不切换。未检测到用户操作发生的精确时间，只能通过两次巡检选择变化推断。
+- 定时任务在12点前最多使用当天预算50%，18点前75%，之后100%；手动诊断可使用剩余全天预算。预算是预扣估算而非运营商精确计数；失败仍计入，响应超出预期及协议开销可能增加消耗。存储租约为尽力互斥，非原子锁。
+- 手动出口观察只输出本轮匿名编号和服务数据中心，不输出原始IP；不同编号只能证明观察到不同出口，非每次请求的完整路由验证。第二个独立下载服务暂未实现。
 
-- 每日预算默认 200 MB，全部组共享；可选 50/100/200/300 MB。
-- 策略组留空自动发现；也可填写 `所有可用线路;美国线路;香港线路;日本线路`。
-- 首次保持定时检测关闭，从 Generic 手动入口运行「Smart Selection · 一键诊断」。每轮最多 6 个去重节点、16 MB 预扣预算、约 155 秒测速时间（另有发现及收尾开销）。
-- 同一次运行即显示独立组排名；完整逐节点 JSON 与错误类型在同一脚本日志的 SMART_SELECTION_DIAGNOSTIC_BEGIN/END 区段，不需要另行运行质量报告。多运行几轮，未测节点会轮询进入队列。
-- 若入口允许传入策略组或节点上下文，检测限于该范围；入口参数形式需真机验证。
-- 确认实测正常后，可选开启每 30 分钟巡检。iOS 后台调度不保证准时。
-- 原生 url-test 仍可能自行切换；本插件没有任何策略修改调用。
+## 验收与回退 / Acceptance and rollback
 
-## 测量与限制 / Measurement and limitations
+本候选版整合原0.2与1.0核心选路功能，仍需一次集中真机验收；模拟测试不能替代 iOS 实际调度、切换、网络身份及请求路径验证。请导出一次「一键诊断」日志（含 SMART_SELECTION_DIAGNOSTIC_BEGIN/END）。检查各组选择、决策理由、回读结果、预算与出口编号。无需提供节点密钥或订阅地址。
 
-Two independent HTTPS HEAD targets (Google and Apple), plus Cloudflare 2 MB download with optional 5 MB refinement for short samples. Requests are serial, directed to named leaf nodes, with certificate checks and redirects/cookies disabled. A valid download must be binary, HTTP 200 and exactly the requested length. The rate includes all request overhead; it is not peak link bandwidth. The second throughput provider is not implemented. V0.1.4 adds a limited manual egress observation, not definitive per-request route verification; compare with external speed tests and Loon request records before trusting routing decisions.
+关闭自动选路或清空管理组可停止写入；关闭定时检测可停止后台巡检；恢复原有组类型可恢复 Loon 原生自动优选。插件卸载不修改规则集。
 
-评分：40%有效吞吐量、20% HTTP 响应时间、30%历史请求成功率、10%同一目标重复请求耗时波动（缺失时其余权重归一化）；速度效用随速度递增而趋于饱和。成功率指探测请求成功率，不是网络丢包率。历史使用近期加权；只有最新有效下载才允许评分；样本不足明确标注。共享数据按网络标识和节点名称复用，各组独立排序。节点名称是临时标识；同名节点在订阅更新后可能发生变化。Wi-Fi SSID 仅本地保存非加密哈希；其他网络身份未核实，历史最多使用 2 小时，不视为独立蜂窝识别。叶子节点之外的嵌套策略、内置策略和常见公告伪节点跳过，不会自行跨组。
-
-Budget reserves requested bytes plus 16 KB per request before sending; timeouts and interrupted attempts remain charged. It is an estimate, not actual carrier accounting; oversized responses and transport overhead can exceed estimates. No extra downloads once the daily budget or per-run cap is insufficient. Device local day resets the shared ledger. The storage lease is best-effort, not an atomic lock. Do not overlap manual and scheduled tests until verified. All measurements and reports stay in local script storage/logs. Probe endpoints see the usual network request metadata. No credentials, SSID text or public IP are intentionally logged.
-
-## 真机验收 / Device acceptance
-
-1. 四组名称及候选数与 Loon 实际界面对照。报告中显示未测试、被跳过及错误状态。
-2. 选择快慢明显的两条节点，重复检测并通过相同节点运行独立测速；记录 Loon 请求日志的实际节点以确认显式路由。
-3. 核对各组排序、有效吞吐量、预扣预算、实际流量记录；重复节点不应在同一批反复下载（自适应复测除外）。
-4. 测试超时、断网、节点移除、Wi-Fi/蜂窝切换；保存 JSON 日志及 Loon 版本。不需要提供机场订阅 URL、密码或节点密钥。
-5. V0.1 通过真机验收之后才进入 V0.2 自动接管；V1.0 在持续使用、回归测试及文档完善后发布。
+Disable auto selection or clear Managed Groups to stop policy writes. Disable scheduled checks to stop background probes. Restore the previous policy type to resume native Loon selection.
 
 ## Tests
 
+`node --check plugins/loon/smart-selection/Smart_Selection.js`
+
 `node plugins/loon/smart-selection/tests/smart-selection.test.js`
 
-Mocked Loon adapters cover group discovery/isolation, shared probing, ranking, budget, invalid data, failure and read-only behavior. They do not emulate iOS networking or Loon plugin parsing.
+Mocked adapters cover discovery, ranking, deduplication, budgets, failure backoff, anonymous egress observation, group isolation, confirmed quality switches, manual holds and failure recovery. Independent GitHub Actions workflow.
 
 References: [Loon Script API](https://nsloon.app/docs/Script/script_api/), [Plugin arguments](https://nsloon.app/docs/Plugin/), [Script syntax](https://nsloon.app/docs/Script/script_v2/), [Cloudflare speedtest](https://github.com/cloudflare/speedtest).

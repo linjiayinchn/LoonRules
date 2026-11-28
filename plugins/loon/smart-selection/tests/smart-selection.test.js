@@ -7,7 +7,7 @@ function mockTests(factory){
       let time=Date.UTC(2026,10,28,8),store=new Map(),calls=[],logs=[],writes=0;
       const groups=custom.groups||{"所有可用线路":["JP-fast","JP-slow","US","HK","DIRECT","剩余流量: 100 GB"],"美国线路":["US"],"香港线路":["HK"],"日本线路":["JP-fast","JP-slow"]};
       const selected=custom.selected||{"所有可用线路":"JP-slow","美国线路":"US","香港线路":"HK","日本线路":"JP-slow"};
-      const api={now:()=>time,random:()=>.123,config:()=>JSON.stringify({all_policy_groups:Object.keys(groups),all_buildin_nodes:["DIRECT","REJECT"],ssid:"mock-wifi"}),members:(n,cb)=>cb(JSON.stringify(custom.typed?groups[n].map(x=>typeof x==="string"?{name:x,type:Object.prototype.hasOwnProperty.call(groups,x)?"group":"node"}:x):groups[n])),selected:n=>selected[n]||"",read:k=>store.get(k)||"",write:(k,v)=>{writes++;if(custom.writeFail)return false;store.set(k,v);return true;},timer:()=>0,clear:()=>{},log:s=>logs.push(s),request:(method,o,cb)=>{
+      const changes=[];const api={setSelected:(g,n)=>{changes.push([g,n]);if(custom.rejectSwitch)return false;selected[g]=n;return true;},now:()=>time,random:()=>.123,config:()=>JSON.stringify({all_policy_groups:Object.keys(groups),all_buildin_nodes:["DIRECT","REJECT"],ssid:"mock-wifi"}),members:(n,cb)=>cb(JSON.stringify(custom.typed?groups[n].map(x=>typeof x==="string"?{name:x,type:Object.prototype.hasOwnProperty.call(groups,x)?"group":"node"}:x):groups[n])),selected:n=>selected[n]||"",read:k=>store.get(k)||"",write:(k,v)=>{writes++;if(custom.writeFail)return false;store.set(k,v);return true;},timer:()=>0,clear:()=>{},log:s=>logs.push(s),request:(method,o,cb)=>{
         calls.push({method,node:o.node,url:o.url,timeout:o.timeout,secure:o.insecure===false});
         let fail=(custom.fail||[]).includes(o.node);
         if(fail){time+=1000;cb("timeout",null,null);return;}
@@ -20,7 +20,7 @@ function mockTests(factory){
         time+=o.node==="JP-slow"?4000:400;
         cb(null,{status:200,headers:{"content-type":"application/octet-stream"}},new Uint8Array(custom.badLength?n-1:n));
       }};
-      return {api,store,calls,logs,advance:ms=>time+=ms};
+      return {api,store,calls,logs,changes,selected,advance:ms=>time+=ms};
     }
     const m=mock(),core=factory(m.api);
     const r=(await core.run({dailyMB:200},{})).report;
@@ -99,6 +99,29 @@ function mockTests(factory){
     const ix=fail.calls.findIndex(x=>x.url.includes("/cdn-cgi/trace"));
     const lastUS=fail.calls.map(x=>x.node).lastIndexOf("US");
     check(ix>=0&&ix<lastUS,"manual egress evidence saved before known-failing candidates");
+    const managed=mock(),mc=factory(managed.api),settings={managedGroups:"日本线路",autoSelect:true};
+    for(let i=0;i<4;i++){await mc.run(settings,{});managed.advance(31*60000);}
+    check(managed.changes.length===1&&managed.changes[0][0]==="日本线路"&&managed.changes[0][1]==="JP-fast","confirmed quality switch in managed group only");
+    check(managed.selected["所有可用线路"]==="JP-slow","independent group management");
+    check(managed.selected["日本线路"]==="JP-fast","confirmed readback");
+    const off=mock(),oc=factory(off.api);
+    for(let i=0;i<4;i++){await oc.run({managedGroups:"日本线路",autoSelect:false},{});off.advance(31*60000);}
+    check(off.changes.length===0,"disable selection");
+    const blank=mock(),bc=factory(blank.api);for(let i=0;i<4;i++)await bc.run({autoSelect:true},{});
+    check(blank.changes.length===0,"no implicit management");
+    const manual=mock(),mcore=factory(manual.api);await mcore.run(settings,{});manual.selected["日本线路"]="JP-fast";const hold=await mcore.run(settings,{});
+    check(hold.report.batch.decisions.find(x=>x.group==="日本线路").reason==="external_selection_hold","external selection detected");
+    const blocked=mock({rejectSwitch:true}),bl=factory(blocked.api);
+    for(let i=0;i<4;i++){await bl.run(settings,{});blocked.advance(31*60000);}
+    check(blocked.changes.length===1&&blocked.selected["日本线路"]==="JP-slow","rejected switch and hold");
+    const broken=mock(),brk=factory(broken.api);await brk.run(settings,{});await brk.run(settings,{});const original=broken.api.request;
+    broken.api.request=(method,o,cb)=>o.node==="JP-slow"?cb("timeout",null,null):original(method,o,cb);
+    await brk.run(settings,{});broken.advance(61*60000);await brk.run(settings,{});
+    check(broken.selected["日本线路"]==="JP-fast","confirmed failure recovery");
+    const phased=mock(),ph=factory(phased.api);for(let i=0;i<8;i++)await ph.run({dailyMB:50},{tag:"定时检测"});
+    const pr=(await ph.run({dailyMB:50},{tag:"质量报告"})).report;
+    const hour=new Date(phased.api.now()).getHours(),max=50*(hour<12?.5:hour<18?.75:1);
+    check(pr.chargedMB<=max,"automatic phased budget");
     return {passed};
   })();
 }

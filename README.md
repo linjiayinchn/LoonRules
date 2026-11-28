@@ -55,14 +55,18 @@ Exact duplicates of specialized rules are removed from general rule sets during 
 | 客户端 / Client | 插件 / Plugin | 功能 / Features |
 | --- | --- | --- |
 | Loon | [Device Loopback](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Device_Loopback.plugin) | 通过 Loon 处理本地开发服务的回环连接，使兼容的 iOS 开发工具能够在使用 Loon 时访问本地服务，避免为此反复切换 LocalDevVPN。 / Handles local development loopback traffic through Loon, allowing compatible iOS development tools to access local services without repeatedly switching to LocalDevVPN. |
+| Loon | [Smart Selection](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Smart_Selection.plugin) · [使用说明 / Guide](plugins/loon/smart-selection/README.md) | 1.0.0-rc.1：多策略组独立智能选路、真实下载测速、历史评分和共享每日预算（默认200 MB）；显式管理 select 组，支持暂停接管和一键诊断。候选版，真机自动切换待验收。 / Independent quality-based node selection, real downloads, historical scoring and a shared daily budget (200 MB default); explicitly managed select groups, pause control and unified diagnostics. Device acceptance pending. |
 
 在 Loon 的插件页面添加对应链接即可使用。 / Add the plugin URL in Loon's plugin settings.
+
 
 ## 自动更新 / Automatic Updates
 
 项目每天同步上游规则，与自定义规则统一整理、去重及校验，并生成各客户端的订阅文件。 / Upstream and custom rules are merged, deduplicated and validated daily before being exported into client-specific subscription files.
 
 更新计划 / Schedule: **00:17 UTC (08:17 UTC+8)**
+
+插件测试由独立工作流运行，不阻塞规则订阅的日常生成。 / Plugin tests run in an independent workflow and do not block daily rule generation.
 
 ## 项目结构 / Project Structure
 
@@ -78,5 +82,7 @@ Exact duplicates of specialized rules are removed from general rule sets during 
 | [.github/workflows/](.github/workflows/) | 自动更新与发布 / Automated updates and publishing |
 
 基础规则来源包括 [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script)，并结合本项目维护的服务域名。 / Base rules draw on [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script), supplemented by curated service domains.
+
+开发维护约定 / Documentation maintenance: 每次开发变更须审查仓库内全部 README，并在同一提交中更新受影响的功能、版本、配置、安装说明与目录结构；未受影响的文档不作无意义改动。 / Review every README on each development change; update affected features, versions, configuration, installation and layout in the same commit, leaving unrelated text unchanged.
 
 欢迎通过 Issues 或 Pull Requests 提供建议与补充规则。 / Suggestions and contributions are welcome through Issues and Pull Requests.
