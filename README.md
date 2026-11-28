@@ -55,7 +55,7 @@ Exact duplicates of specialized rules are removed from general rule sets during 
 | 客户端 / Client | 插件 / Plugin | 功能 / Features |
 | --- | --- | --- |
 | Loon | [Device Loopback](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Device_Loopback.plugin) | 通过 Loon 处理本地开发服务的回环连接，使兼容的 iOS 开发工具能够在使用 Loon 时访问本地服务，避免为此反复切换 LocalDevVPN。 / Handles local development loopback traffic through Loon, allowing compatible iOS development tools to access local services without repeatedly switching to LocalDevVPN. |
-| Loon | [Smart Selection](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Smart_Selection.plugin) · [使用说明 / Guide](plugins/loon/smart-selection/README.md) | 1.0.0-rc.2：多策略组独立智能选路、真实下载测速、历史评分和共享每日预算（默认200 MB）；显式管理 select 组，支持暂停接管和一键诊断。候选版，真机自动切换待验收。 / Independent quality-based node selection, real downloads, historical scoring and a shared daily budget (200 MB default); explicitly managed select groups, pause control and unified diagnostics. Device acceptance pending. |
+| Loon | [Smart Selection](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Smart_Selection.plugin) · [使用说明 / Guide](plugins/loon/smart-selection/README.md) | 1.0.0-rc.3：多策略组独立智能选路、真实下载测速、历史评分和共享每日预算（默认200 MB）；管理范围留空即全选纯节点组（须预先设置为 select），支持暂停接管和一键诊断。候选版，真机自动切换待验收。 / Independent quality-based node selection, real downloads, historical scoring and a shared daily budget (200 MB default); blank scope includes eligible leaf-only groups (configure as select first), pause control and unified diagnostics. Device acceptance pending. |
 
 在 Loon 的插件页面添加对应链接即可使用。 / Add the plugin URL in Loon's plugin settings.
 

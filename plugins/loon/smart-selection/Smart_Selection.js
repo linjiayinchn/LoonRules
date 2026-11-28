@@ -1,8 +1,8 @@
-// Smart Selection 1.0.0-rc.2 | RoutingRules | quality-based selection
-// Loon 3.5.1 (983)+. Explicitly managed groups only; no MitM or credential collection.
+// Smart Selection 1.0.0-rc.3 | RoutingRules | quality-based selection
+// Loon 3.5.1 (983)+. Scoped leaf groups only; no MitM or credential collection.
 function createSmartSelection(api) {
   "use strict";
-  const VERSION="1.0.0-rc.2", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
+  const VERSION="1.0.0-rc.3", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
   const MB=1000000, H=3600000, BATCH=6, RUN_BYTES=16*MB, RUN_MS=155000;
   const now=api.now, own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const unique=a=>Array.from(new Set(a));
@@ -25,9 +25,13 @@ function createSmartSelection(api) {
     let budget=Number(args.dailyMB==null?200:args.dailyMB);
     if(![50,100,200,300].includes(budget))throw Error("不支持的每日预算");
     const groups=String(args.groups||"").split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);
-    const managed=String(args.managedGroups||"").split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);
+    // New installations use a single scope. Preserve nonempty legacy restrictions
+    // while an older cached plugin definition still sends managedGroups.
+    const legacy=String(args.managedGroups||"").split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);
+    const managed=legacy.length?legacy:groups;
     return {budget:budget*MB,groups:unique(groups),managed:unique(managed),autoSelect:args.autoSelect!==false&&args.autoSelect!=="false",notify:args.notify===true||args.notify==="true"};
   }
+  const inScope=(opts,name)=>opts.managed.length===0||opts.managed.includes(name);
   function network(c){
     // Never persist SSID itself. An unidentified network is deliberately not trusted
     // as a stable network identity: history is short-lived and marked unverified.
@@ -77,7 +81,7 @@ function createSmartSelection(api) {
     const built=new Set(Array.isArray(c.all_buildin_nodes)?c.all_buildin_nodes:[]);
     // Flat leaf groups only in V0.1. Nested groups are not treated as individual nodes.
     for(const name of scoped){
-      let g={name,nodes:[],selected:"",skipped:0,error:null,discovery:null};
+      let g={name,nodes:[],selected:"",skipped:0,error:null,discovery:null,autoEligible:false};
       groups.push(g);
       if(!known.has(name)){g.error="策略组不存在";continue;}
       try{
@@ -106,6 +110,10 @@ function createSmartSelection(api) {
         if(a.length&&shape.strings+shape.nodes+shape.nonNodes===0)throw Error("候选节点条目格式未识别");
         g.nodes=unique(names.filter(x=>!known.has(x)&&!built.has(x)&&!builtIn(x)&&!pseudo(x)));
         g.skipped=a.length-g.nodes.length;
+        // A mixed group may encode business routing choices (DIRECT/REJECT or
+        // nested groups). Never override it just because it contains leaf nodes.
+        g.autoEligible=g.nodes.length>0&&shape.nonNodes===0&&shape.unknown===0&&
+          !names.some(x=>known.has(x)||built.has(x)||builtIn(x));
         if(context.node)g.nodes=g.nodes.filter(x=>x===context.node);
         if(!g.nodes.length)g.error="无可直接测速的叶子节点";
       }catch(e){g.error=e.message;}
@@ -253,7 +261,8 @@ function createSmartSelection(api) {
   function choose(g,s,net,run,opts,control,t){
     const current=g.selected;
     const result=(reason,extra={})=>({group:g.name,from:current,to:null,reason,...extra});
-    if(!opts.autoSelect||!opts.managed.includes(g.name))return result("observe_only");
+    if(!opts.autoSelect||!inScope(opts,g.name))return result("observe_only");
+    if(!g.autoEligible)return result("unsafe_group_membership");
     if(g.error||!g.nodes.includes(current))return result("selection_not_in_candidates");
     if(!net.known)return result("network_identity_unknown");
     if(!control||typeof control!=="object")return result("initial_baseline");
@@ -300,7 +309,7 @@ function createSmartSelection(api) {
           verifyLease(token);
           // Read exact live membership and selection before writing.
           const latest=await discover(config(),{...opts,groups:[g.name]},{});
-          if(network(config()).key!==net.key||latest.length!==1||latest[0].error||latest[0].selected!==g.selected||!latest[0].nodes.includes(d.to)||!latest[0].nodes.includes(g.selected)){
+          if(network(config()).key!==net.key||latest.length!==1||latest[0].error||!latest[0].autoEligible||latest[0].selected!==g.selected||!latest[0].nodes.includes(d.to)||!latest[0].nodes.includes(g.selected)){
             d={...d,reason:"preflight_changed",to:null};
             state.pending=null;
           }else if(typeof api.setSelected!=="function"){
@@ -326,14 +335,14 @@ function createSmartSelection(api) {
     return decisions;
   }
   function buildReport(groups,s,net,opts,run){
-    return {version:VERSION,mode:opts.autoSelect&&opts.managed.length?"智能选路":"观察模式",network:net.label,networkIdentified:net.known,
+    return {version:VERSION,mode:opts.autoSelect?"智能选路":"观察模式",network:net.label,networkIdentified:net.known,
       day:s.day,budgetMB:opts.budget/MB,chargedMB:Math.round(s.charged/MB*100)/100,receivedMB:Math.round(s.actual/MB*100)/100,
       batch:run?{tested:run.tested,chargedMB:Math.round(run.charged/MB*100)/100,stop:run.stop,stopReason:run.stopReason||null,
         elapsedMs:now()-run.start,uniqueCandidates:unique(groups.flatMap(g=>g.nodes)).length,
         remainingThisRun:unique(groups.flatMap(g=>g.nodes)).filter(x=>!run.tested.includes(x)).length,
         samples:run.samples||[],egress:run.egress||[],deferred:run.deferred||[],decisions:run.decisions||[]}:null,
       groups:groups.map(g=>{const rows=g.nodes.map(node=>({node,current:node===g.selected,...quality(getRecord(s,net,node),net,now()),...retryInfo(getRecord(s,net,node))})).sort((a,b)=>(b.score??-1)-(a.score??-1)||a.node.localeCompare(b.node));
-        return {name:g.name,selected:g.selected,selectedInCandidates:g.nodes.includes(g.selected),count:g.nodes.length,skipped:g.skipped,error:g.error,discovery:g.discovery,ranked:rows.filter(r=>r.score!=null).length,rows};})};
+        return {name:g.name,selected:g.selected,selectedInCandidates:g.nodes.includes(g.selected),autoEligible:g.autoEligible,count:g.nodes.length,skipped:g.skipped,error:g.error,discovery:g.discovery,ranked:rows.filter(r=>r.score!=null).length,rows};})};
   }
   function summary(r){
     const lines=[`Smart Selection ${r.version} · ${r.mode}`,`${r.network}｜今日预算 ${r.chargedMB}/${r.budgetMB} MB（预扣估算）`];
@@ -346,7 +355,7 @@ function createSmartSelection(api) {
       if(g.rows.length>5)lines.push("其余节点详见脚本日志");
     }
     if(!r.networkIdentified)lines.push("\n网络身份未识别，历史数据仅短期使用。");
-    const reasons={observe_only:"仅观察",selection_not_in_candidates:"当前节点不匹配，保护中",network_identity_unknown:"网络身份不明，暂不切换",initial_baseline:"建立基线",external_selection_hold:"检测到外部切换，暂停接管2小时",manual_hold:"手动选择保护",no_fresh_confirmed_candidate:"无新鲜且已复测候选",switch_cooldown:"切换冷却中",current_not_comparable:"当前节点缺少可比较样本",no_material_gain:"优势不足，保持当前",awaiting_confirmation:"等待下一轮确认",preflight_changed:"配置已变化，取消切换",selection_api_unavailable:"切换接口不可用",switch_not_confirmed:"切换未确认，暂停接管",decision_or_api_error:"决策接口异常",run_interrupted:"本轮请求未确认结束，暂停切换"};
+    const reasons={observe_only:"仅观察",unsafe_group_membership:"非纯节点组，跳过自动选路",selection_not_in_candidates:"当前节点不匹配，保护中",network_identity_unknown:"网络身份不明，暂不切换",initial_baseline:"建立基线",external_selection_hold:"检测到外部切换，暂停接管2小时",manual_hold:"手动选择保护",no_fresh_confirmed_candidate:"无新鲜且已复测候选",switch_cooldown:"切换冷却中",current_not_comparable:"当前节点缺少可比较样本",no_material_gain:"优势不足，保持当前",awaiting_confirmation:"等待下一轮确认",preflight_changed:"配置已变化，取消切换",selection_api_unavailable:"切换接口不可用",switch_not_confirmed:"切换未确认，暂停接管",decision_or_api_error:"决策接口异常",run_interrupted:"本轮请求未确认结束，暂停切换"};
     if(r.batch&&r.batch.decisions.length){lines.push("\n选路决策：");for(const d of r.batch.decisions)lines.push(d.group+"："+(d.switched?d.from+" → "+d.to:reasons[d.reason]||d.reason));}
     lines.push("\n完整诊断已合并至同一日志，无需另行运行质量报告。");
     return lines.join("\n");
@@ -374,7 +383,7 @@ function createSmartSelection(api) {
         if(run.stop||network(config()).key!==net.key)return;
         const tested=new Map(run.samples.map(x=>[x.node,x.sample]));
         const ready=groups.filter(g=>!decided.has(g.name)&&(final||(
-          opts.autoSelect&&opts.managed.includes(g.name)&&
+          opts.autoSelect&&inScope(opts,g.name)&&g.autoEligible&&
           tested.has(g.selected)&&g.nodes.some(n=>n!==g.selected&&tested.get(n)?.mbps!=null)
         )));
         if(!ready.length)return;
@@ -416,7 +425,7 @@ function createSmartSelection(api) {
       await checkpoint(true);
       await observeEgress();
       for(const g of groups.filter(x=>!decided.has(x.name))){
-        const reason=!opts.autoSelect||!opts.managed.includes(g.name)?"observe_only":g.error||!g.nodes.includes(g.selected)?"selection_not_in_candidates":"run_interrupted";
+        const reason=!opts.autoSelect||!inScope(opts,g.name)?"observe_only":!g.autoEligible?"unsafe_group_membership":g.error||!g.nodes.includes(g.selected)?"selection_not_in_candidates":"run_interrupted";
         run.decisions.push({group:g.name,from:g.selected,to:null,reason});
       }
       if(opts.notify&&typeof api.notify==="function"){
@@ -426,7 +435,7 @@ function createSmartSelection(api) {
       s.cursor=(s.cursor||0)+1;prune(s);s.last=now();save(s);
       if(!run.stopReason)run.stopReason=run.stop?"请求异常，提前结束":candidates.length===0?(run.deferred.length?"故障节点退避中":"没有可测速节点"):"本轮候选检测完成";
       const report=buildReport(groups,s,net,opts,run);
-      report.diagnostic={schema:2,settings:{autoSelect:opts.autoSelect,managedGroups:opts.managed,matchedManagedGroups:groups.filter(g=>opts.managed.includes(g.name)).map(g=>g.name)},generatedAt:new Date(now()).toISOString(),scope:unified?"all_configured_groups":"configured_scope",checks:{
+      report.diagnostic={schema:2,settings:{autoSelect:opts.autoSelect,scopeMode:opts.managed.length?"specified":"all",managedGroups:opts.managed,matchedManagedGroups:opts.autoSelect?groups.filter(g=>inScope(opts,g.name)&&g.autoEligible).map(g=>g.name):[],groupTypeVerification:"not_exposed_by_documented_api"},generatedAt:new Date(now()).toISOString(),scope:unified?"all_configured_groups":"configured_scope",checks:{
         groupDiscovery:groups.length>0&&groups.every(g=>!g.error)?"pass":groups.some(g=>!g.error)?"partial":"fail",
         selectedRead:groups.every(g=>g.selected)?"pass":"partial",
         selectedMembership:groups.every(g=>g.selected&&g.nodes.includes(g.selected))?"pass":"mismatch_or_unknown",

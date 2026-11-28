@@ -109,7 +109,8 @@ function mockTests(factory){
     for(let i=0;i<4;i++){await oc.run({managedGroups:"日本线路",autoSelect:false},{});off.advance(31*60000);}
     check(off.changes.length===0,"disable selection");
     const blank=mock(),bc=factory(blank.api);for(let i=0;i<4;i++)await bc.run({autoSelect:true},{});
-    check(blank.changes.length===0,"no implicit management");
+    check(blank.changes.length===1&&blank.changes[0][0]==="日本线路","blank scope automatically manages eligible leaf groups");
+    check(blank.selected["所有可用线路"]==="JP-slow","mixed group with DIRECT never switched");
     const manual=mock(),mcore=factory(manual.api);await mcore.run(settings,{});manual.selected["日本线路"]="JP-fast";const hold=await mcore.run(settings,{});
     check(hold.report.batch.decisions.find(x=>x.group==="日本线路").reason==="external_selection_hold","external selection detected");
     const blocked=mock({rejectSwitch:true}),bl=factory(blocked.api);
@@ -132,6 +133,21 @@ function mockTests(factory){
     check(sr.batch.decisions.find(d=>d.group==="美国线路").reason==="observe_only","unmanaged group explicitly observe-only after interruption");
     check(sr.diagnostic.settings.managedGroups[0]==="日本线路"&&sr.diagnostic.settings.autoSelect,"diagnostic configuration visible");
     check(new Set(sr.batch.decisions.map(d=>d.group)).size===sr.groups.length,"one decision per group per batch");
+    const only=mock(),onlyCore=factory(only.api),onlySettings={groups:"日本线路",autoSelect:true};
+    let onlyReport;
+    for(let i=0;i<4;i++){onlyReport=(await onlyCore.run(onlySettings,{})).report;only.advance(31*60000);}
+    check(onlyReport.groups.length===1&&only.changes.length===1&&only.changes[0][0]==="日本线路","single field limits both discovery and selection");
+    const all=mock(),allCore=factory(all.api);
+    const ar=(await allCore.run({groups:"",autoSelect:true},{})).report;
+    check(ar.mode==="智能选路"&&ar.diagnostic.settings.scopeMode==="all","empty scope exposes automatic mode");
+    check(ar.diagnostic.settings.matchedManagedGroups.length===3&&!ar.diagnostic.settings.matchedManagedGroups.includes("所有可用线路"),"eligible groups shown; mixed policy excluded");
+    check(ar.batch.decisions.find(d=>d.group==="所有可用线路").reason==="unsafe_group_membership","mixed policy protection reason");
+    const stop=mock(),stopCore=factory(stop.api);
+    const stopped=(await stopCore.run({groups:"",autoSelect:false},{})).report;
+    check(stopped.mode==="观察模式"&&stopped.batch.decisions.every(d=>d.reason==="observe_only")&&stopped.diagnostic.settings.matchedManagedGroups.length===0,"off switch remains explicit observe-only");
+    const unknown=mock({typed:true,groups:{A:["JP-fast","JP-slow",{name:"nested",type:"group"}]},selected:{A:"JP-slow"}});
+    const un=(await factory(unknown.api).run({},{})).report;
+    check(!un.groups[0].autoEligible&&un.batch.decisions[0].reason==="unsafe_group_membership","nested policy objects excluded");
     return {passed};
   })();
 }
