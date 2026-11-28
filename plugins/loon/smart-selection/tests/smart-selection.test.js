@@ -4,7 +4,7 @@ function mockTests(factory){
   return (async()=>{
     let passed=0;const check=(v,label)=>{if(!v)throw Error("FAIL: "+label);passed++;};
     function mock(custom={}){
-      let time=Date.UTC(2026,10,28,8),store=new Map(),calls=[],logs=[],writes=0;
+      let time=custom.startTime??new Date(2026,10,28,8,0,0).getTime(),store=new Map(),calls=[],logs=[],writes=0;
       const groups=custom.groups||{"所有可用线路":["JP-fast","JP-slow","US","HK","DIRECT","剩余流量: 100 GB"],"美国线路":["US"],"香港线路":["HK"],"日本线路":["JP-fast","JP-slow"]};
       const selected=custom.selected||{"所有可用线路":"JP-slow","美国线路":"US","香港线路":"HK","日本线路":"JP-slow"};
       let timerCallback=null;const changes=[];const api={setSelected:(g,n)=>{changes.push([g,n]);if(custom.rejectSwitch)return false;selected[g]=n;return true;},now:()=>time,random:()=>.123,config:()=>JSON.stringify({all_policy_groups:Object.keys(groups),all_buildin_nodes:["DIRECT","REJECT"],ssid:"mock-wifi"}),members:(n,cb)=>cb(JSON.stringify(custom.typed?groups[n].map(x=>typeof x==="string"?{name:x,type:Object.prototype.hasOwnProperty.call(groups,x)?"group":"node"}:x):groups[n])),selected:n=>selected[n]||"",read:k=>store.get(k)||"",write:(k,v)=>{writes++;if(custom.writeFail)return false;store.set(k,v);return true;},timer:cb=>{timerCallback=cb;return 0;},clear:()=>{timerCallback=null;},log:s=>logs.push(s),request:(method,o,cb)=>{
@@ -148,6 +148,36 @@ function mockTests(factory){
     const unknown=mock({typed:true,groups:{A:["JP-fast","JP-slow",{name:"nested",type:"group"}]},selected:{A:"JP-slow"}});
     const un=(await factory(unknown.api).run({},{})).report;
     check(!un.groups[0].autoEligible&&un.batch.decisions[0].reason==="unsafe_group_membership","nested policy objects excluded");
+    const local=(h,m=0,s=0,ms=0)=>new Date(2026,10,28,h,m,s,ms).getTime();
+    const quietCore=factory(mock().api),defaults=quietCore.options({});
+    check(quietCore.quietAt(defaults,local(0))&&quietCore.quietAt(defaults,local(7,59))&&!quietCore.quietAt(defaults,local(8))&&!quietCore.quietAt(defaults,local(23,59)),"default quiet period inclusive start and exclusive end");
+    const night=quietCore.options({quietStart:"22:30",quietEnd:"06:15"});
+    check(quietCore.quietAt(night,local(22,30))&&quietCore.quietAt(night,local(0))&&!quietCore.quietAt(night,local(6,15))&&!quietCore.quietAt(night,local(12)),"custom midnight crossing");
+    const dayQuiet=quietCore.options({quietStart:"13:15",quietEnd:"15:45"});
+    check(!quietCore.quietAt(dayQuiet,local(13,14))&&quietCore.quietAt(dayQuiet,local(13,15))&&!quietCore.quietAt(dayQuiet,local(15,45)),"custom daytime interval");
+    const sleeping=mock({startTime:local(3)}),sleepCore=factory(sleeping.api);
+    for(const tag of ["定时检测","网络变化","立即检测","一键诊断"]){
+      const x=await sleepCore.run({},{tag});
+      check(x.report.status==="quiet_hours"&&x.report.batch.chargedMB===0&&sleeping.calls.length===0&&sleeping.changes.length===0&&sleeping.store.size===0,"quiet period blocks "+tag);
+    }
+    sleeping.advance(5*3600000);
+    const resumed=await sleepCore.run({},{tag:"定时检测"});
+    check(resumed.report.batch.tested.length>0&&sleeping.calls.length>0,"automatic probes resume at end of quiet time");
+    const disabled=mock({startTime:local(3)}),disabledCore=factory(disabled.api);
+    check((await disabledCore.run({quietEnabled:false},{tag:"立即检测"})).report.batch.tested.length>0,"disabled quiet period allows manual probes");
+    const malformed=mock({startTime:local(10)}),malformedCore=factory(malformed.api);
+    let badClock=false,sameClock=false;try{await malformedCore.run({quietStart:"25:00"},{});}catch(_){badClock=true;}
+    try{await malformedCore.run({quietStart:"08:00",quietEnd:"08:00"},{});}catch(_){sameClock=true;}
+    check(badClock&&sameClock&&malformed.calls.length===0,"invalid and equal clocks fail before network");
+    const boundary=mock({startTime:local(23,59,59,950)}),boundaryCore=factory(boundary.api);
+    const boundaryResult=await boundaryCore.run({},{tag:"立即检测"});
+    check(boundary.calls.length===1&&boundary.changes.length===0&&boundaryResult.report.batch.stopReason==="休眠时段","no new requests or switch after boundary");
+    const bs=JSON.parse(boundary.store.get("routingrules.smart-selection.v1"));
+    check(Object.keys(bs.records).length===0,"quiet interruption does not contaminate quality history");
+    const sr2=await sleepCore.run({},{tag:"质量报告"});
+    check(sr2.report.batch===null,"read-only status remains accessible");
+    const userView=(await factory(mock().api).run({},{tag:"立即检测"})).content;
+    check(userView.includes("今日测速预算")&&!userView.includes("预扣")&&!userView.includes("诊断")&&!userView.includes("watchdog"),"user-facing result excludes implementation details");
     return {passed};
   })();
 }

@@ -1,57 +1,53 @@
-# Smart Selection / 智能线路优选
+# Smart Selection
 
-**1.0.0-rc.3 — 1.0 功能候选版 / 1.0 release candidate. 真机自动切换尚待集中验收。**
+Smart Selection 是一款 Loon 智能线路优选插件，综合下载速度、响应时间和稳定性，为不同策略组选择表现更好的节点，减少频繁切换。
 
-Smart Selection 为 Loon 的指定策略组独立执行质量检测和智能选路。测速数据跨组去重复用，不改变分流规则、机场订阅或其他未管理策略组。
+Smart Selection is a Loon plugin that selects nodes based on download speed, response time and reliability, with independent selection for each policy group.
 
-Smart Selection measures and selects nodes independently within the selected scope of Loon policy groups, sharing probe data without changing routing rules or subscriptions.
+## 功能 / Features
+
+- 智能选路：综合线路质量与历史表现，按策略组独立优选。 / Quality-based selection within each policy group.
+- 自动检测：定时测速，网络变化时重新评估。 / Scheduled checks and reassessment on network changes.
+- 稳定连接：识别故障线路，避免因微小评分差异频繁切换。 / Fault recovery and switching protection.
+- 流量管理：所有策略组共享每日测速预算。 / Shared daily traffic budget.
+- 休眠时段：在指定时间内暂停测速和选路。 / Custom quiet hours.
+- 切换通知：可选接收线路切换提醒。 / Optional switch notifications.
 
 ## 安装 / Installation
 
-Loon 3.5.1 (983)+: [Smart_Selection.plugin](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Smart_Selection.plugin).
+适用于 Loon 3.5.1 (983) 及以上版本。 / Requires Loon 3.5.1 (983) or later.
 
-1. 更新或添加远程插件。「管理策略组」是唯一范围参数：留空检测全部组并管理符合条件的纯节点组；填写精确组名（英文分号分隔）则仅检测和管理指定组。
-2. **启用自动选路：**将希望接管的组从 `url-test` 改为 `select`，保留名称、节点筛选和规则绑定。留空表示全选，并不表示观察模式；关闭「自动选路」才进入观察模式。Loon 公开接口无法可靠识别组类型；如还有不希望接管的纯节点组，请明确填写管理名单，避免与原生自动选择机制竞争。混合 DIRECT/REJECT、嵌套组或未知成员的策略组只检测、不切换。旧插件配置仍传入非空 managedGroups 时保留旧限制，更新插件定义后使用单一范围参数。
-3. 默认每30分钟巡检，网络变化也触发；iOS 后台不保证准时。执行「一键诊断」可立即收集一份包含检测、评分、预算、出口观察及选路决定的日志。
-4. 不使用 MitM，无额外服务端。只管理叶子节点组。组类型无法可靠从公开配置摘要读取，须由用户确认已设为 select。
+[添加 Smart Selection](https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/Smart_Selection.plugin)
 
-Convert groups to `select` before enabling management. The single Managed Groups field scopes both probing and selection: empty means all groups, with automatic writes restricted to eligible leaf-only groups. Nonempty means only the named groups. Disable Auto Selection for observe-only mode. The documented API does not reliably expose policy group types; use an explicit list if any leaf groups should be excluded. Mixed or nested groups are never switched. Scheduled checks are enabled by default; use the one-click diagnostic for a unified log.
+1. 在 Loon 的插件页面添加上述订阅地址。 / Add the URL in Loon's plugin settings.
+2. 将需要自动优选的策略组设为 `select`，保留原有节点及分流设置。 / Set the policy groups to `select`, retaining their nodes and routing rules.
+3. 在「管理策略组」中留空以管理全部符合条件的线路组，或填写指定组名，以英文分号分隔。 / Leave Managed Groups blank to include all eligible node-only groups, or enter group names separated by semicolons.
 
-## 参数 / Settings
+包含直连、拒绝或嵌套策略的组保留原有选择；如只希望管理部分纯节点组，请填写组名。 / Mixed and nested policy groups retain their original selection. Specify group names to manage only a subset of node-only groups.
 
-| 参数 / Setting | 默认 / Default |
-| --- | --- |
-| 每日共享预算 / Shared daily budget | 200 MB (50/100/200/300 selectable) |
-| 单轮限制 / Batch cap | 6 nodes / 16 MB / 155 s probing |
-| 定时与网络变化 / Scheduled and network-change checks | Enabled, every 30 min |
-| 自动选路 / Auto selection | Enabled; blank scope includes eligible leaf-only groups |
-| 切换通知 / Switch notification | Off |
-| 普通切换冷却 / Switch cooldown | 30 min |
-| 外部选择保护 / External selection hold | 2 h |
+## 设置 / Settings
 
-## 测量与决策 / Measurement and decisions
+| 设置 / Setting | 默认值 / Default | 说明 / Description |
+| --- | --- | --- |
+| 管理策略组 / Managed Groups | 全部 / All | 留空即全选 / Blank includes all eligible groups |
+| 自动选路 / Auto Selection | 开启 / On | 根据质量选择线路 / Select nodes by quality |
+| 自动检测 / Automatic Checks | 开启 / On | 每30分钟及网络变化时检测 / Every 30 minutes and on network changes |
+| 每日测速预算 / Daily Budget | 200 MB | 50、100、200、300 MB 可选 / Shared across groups |
+| 休眠时段 / Quiet Hours | 开启 / On | 暂停测速与选路 / Pause probes and selection |
+| 休眠开始 / Start | 00:00 | 24小时制 / 24-hour time |
+| 休眠结束 / End | 08:00 | 24小时制 / 24-hour time |
+| 切换通知 / Notifications | 关闭 / Off | 成功切换时通知 / Notify on successful switches |
 
-- Google/Apple HTTPS HEAD (5 s timeout), Cloudflare binary download (2 MB, adaptive 5 MB, 15 s timeout). Valid download requires HTTP 200 and exact byte length; TLS verified, no redirects. Serial probing, pre-charge requested bytes plus 16 KB allowance. Effective end-to-end throughput, not peak bandwidth.
-- 评分：下载40%、HTTP响应20%、历史请求成功率30%、同目标重复请求波动10%；缺少波动时其余权重归一化。历史速度近期加权，未知及过期样本不用于切换。失败自动复检退避1/2/4/6小时；优先覆盖未测节点。
-- 普通切换须当前与候选本轮均有可比较下载、候选至少2次有效样本、成功率≥80%、下载记录不超过1小时；评分至少提升10分，或同时提升至少5分及15%且速度提升至少25%，连续两轮确认。已确认故障（连续两轮完整检测且无有效下载）允许跳过普通冷却；未回调不能当作已确认故障。当前与候选必须精确属于同一组。
-- 独立决策，操作前重新读取成员和当前选择，写入后回读验证；外部选择保护2小时，切换失败保护2小时。网络身份未识别时不自动修改策略；网络变化触发重检，Wi-Fi 历史按本地 SSID 哈希区分。在复检已知故障节点及可选出口诊断之前，先完成已经取得可比较样本的独立管理组决策；每组每轮只决策一次。回调未结束或网络变化后不再启动新的切换或请求，已完成的决策保留。诊断报告列出实际传入的自动选路开关、全选或指定范围、符合条件的管理组名单；观察模式不代表切换失败。未检测到用户操作发生的精确时间，只能通过两次巡检选择变化推断。
-- 定时任务在12点前最多使用当天预算50%，18点前75%，之后100%；手动诊断可使用剩余全天预算。预算是预扣估算而非运营商精确计数；失败仍计入，响应超出预期及协议开销可能增加消耗。存储租约为尽力互斥，非原子锁。
-- 手动出口观察只输出本轮匿名编号和服务数据中心，不输出原始IP；不同编号只能证明观察到不同出口，非每次请求的完整路由验证。第二个独立下载服务暂未实现。
+休眠时间以设备本地时间为准，支持跨午夜（如 23:00–07:00）。休眠期间所有检测暂停，现有线路继续使用；结束后随下一次自动检测恢复。需要临时测速时，可关闭休眠开关后执行「立即检测」。
 
-## 验收与回退 / Acceptance and rollback
+Quiet hours follow the device's local time and can span midnight, e.g. 23:00–07:00. The current connection remains in use while checks and selection are paused. Automatic checks resume at the next scheduled opportunity. Turn quiet hours off to run an immediate check during that period.
 
-本候选版整合原0.2与1.0核心选路功能，仍需一次集中真机验收；模拟测试不能替代 iOS 实际调度、切换、网络身份及请求路径验证。请导出一次「一键诊断」日志（含 SMART_SELECTION_DIAGNOSTIC_BEGIN/END）。检查各组选择、决策理由、回读结果、预算与出口编号。无需提供节点密钥或订阅地址。
+## 使用 / Usage
 
-关闭自动选路可停止写入（清空管理组表示全选）；关闭定时检测可停止后台巡检；恢复原有组类型可恢复 Loon 原生自动优选。插件卸载不修改规则集。
+开启自动检测和自动选路后，插件会根据线路质量自动调整。可运行「立即检测」查看当前线路、推荐线路和测速预算；关闭自动选路后仍可测速。切换通知可按需开启。
 
-Disable auto selection to stop policy writes; clearing Managed Groups selects all eligible leaf groups. Disable scheduled checks to stop background probes. Restore the previous policy type to resume native Loon selection.
+With automatic checks and selection enabled, the plugin evaluates and adjusts routes. Run **Check Now** to view current and recommended nodes and daily budget. Disable automatic selection to monitor quality without changing nodes.
 
-## Tests
+测速预算为预计消耗量，包含请求预留开销。自动检测时间取决于 Loon 的后台调度。 / The budget estimates probe traffic, including request overhead. Automatic checks depend on Loon's scheduling.
 
-`node --check plugins/loon/smart-selection/Smart_Selection.js`
-
-`node plugins/loon/smart-selection/tests/smart-selection.test.js`
-
-Mocked adapters cover discovery, ranking, deduplication, budgets, failure backoff, anonymous egress observation, group isolation, confirmed quality switches, manual holds and failure recovery. Independent GitHub Actions workflow.
-
-References: [Loon Script API](https://nsloon.app/docs/Script/script_api/), [Plugin arguments](https://nsloon.app/docs/Plugin/), [Script syntax](https://nsloon.app/docs/Script/script_v2/), [Cloudflare speedtest](https://github.com/cloudflare/speedtest).
+[版本记录 / Version history](https://github.com/GFStillpoint/RoutingRules/commits/main/plugins/loon/smart-selection/) · [反馈 / Issues](https://github.com/GFStillpoint/RoutingRules/issues)

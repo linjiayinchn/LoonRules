@@ -1,8 +1,8 @@
-// Smart Selection 1.0.0-rc.3 | RoutingRules | quality-based selection
+// Smart Selection 1.0.0-rc.4 | RoutingRules | quality-based selection
 // Loon 3.5.1 (983)+. Scoped leaf groups only; no MitM or credential collection.
 function createSmartSelection(api) {
   "use strict";
-  const VERSION="1.0.0-rc.3", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
+  const VERSION="1.0.0-rc.4", KEY="routingrules.smart-selection.v1", LOCK=KEY+".lease";
   const MB=1000000, H=3600000, BATCH=6, RUN_BYTES=16*MB, RUN_MS=155000;
   const now=api.now, own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
   const unique=a=>Array.from(new Set(a));
@@ -20,6 +20,24 @@ function createSmartSelection(api) {
     if(!Array.isArray(c.all_policy_groups)||!c.all_policy_groups.every(validName))throw Error("无法识别 all_policy_groups；请检查 Loon 版本");
     return c;
   }
+  function clock(value,fallback){
+    const raw=value==null||String(value).trim()===""?fallback:String(value).trim();
+    const m=/^([01]?\d|2[0-3]):([0-5]\d)$/.exec(raw);
+    if(!m)throw Error("休眠时间格式有误，请使用 HH:mm");
+    return Number(m[1])*60+Number(m[2]);
+  }
+  const clockText=m=>String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+  function quietAt(opts,t){
+    if(!opts.quiet.enabled)return false;
+    const d=new Date(t),m=d.getHours()*60+d.getMinutes(),{start,end}=opts.quiet;
+    return start<end?m>=start&&m<end:m>=start||m<end;
+  }
+  function quietStop(opts,run){
+    if(!quietAt(opts,now()))return false;
+    if(!run.stop){run.stop=true;run.stopReason="休眠时段";}
+    return true;
+  }
+  const quietLabel=opts=>clockText(opts.quiet.start)+"–"+clockText(opts.quiet.end);
   function options(args) {
     args=args&&typeof args==="object"?args:{};
     let budget=Number(args.dailyMB==null?200:args.dailyMB);
@@ -29,7 +47,12 @@ function createSmartSelection(api) {
     // while an older cached plugin definition still sends managedGroups.
     const legacy=String(args.managedGroups||"").split(/[;；\n]/).map(x=>x.trim()).filter(Boolean);
     const managed=legacy.length?legacy:groups;
-    return {budget:budget*MB,groups:unique(groups),managed:unique(managed),autoSelect:args.autoSelect!==false&&args.autoSelect!=="false",notify:args.notify===true||args.notify==="true"};
+    const quiet={enabled:args.quietEnabled!==false&&args.quietEnabled!=="false",start:0,end:480};
+    if(quiet.enabled){
+      quiet.start=clock(args.quietStart,"00:00");quiet.end=clock(args.quietEnd,"08:00");
+      if(quiet.start===quiet.end)throw Error("休眠开始时间和结束时间不能相同");
+    }
+    return {budget:budget*MB,groups:unique(groups),managed:unique(managed),autoSelect:args.autoSelect!==false&&args.autoSelect!=="false",notify:args.notify===true||args.notify==="true",quiet};
   }
   const inScope=(opts,name)=>opts.managed.length===0||opts.managed.includes(name);
   function network(c){
@@ -200,6 +223,7 @@ function createSmartSelection(api) {
   async function request(node,url,method,bytes,s,opts,run,token,trace=false) {
     // Reserve requested payload plus a conservative per-request allowance.
     // This is an estimate, not a physical transport-layer byte counter.
+    if(quietStop(opts,run))return {skipped:true};
     const allowance=bytes+16000;
     if(!reserve(s,opts,run,allowance,token))return {skipped:true};
     const start=now();
@@ -294,6 +318,7 @@ function createSmartSelection(api) {
     if(!s.control||typeof s.control!=="object"||Array.isArray(s.control))s.control={};
     const decisions=[];
     for(const g of groups){
+      if(quietStop(opts,run)){decisions.push({group:g.name,from:g.selected,to:null,reason:"quiet_hours"});continue;}
       const key=JSON.stringify([net.key,g.name]);
       const old=own(s.control,key)?s.control[key]:null;
       const state=old?{...old}:{observed:g.selected,holdUntil:0,lastSwitch:0,pending:null};
@@ -309,7 +334,9 @@ function createSmartSelection(api) {
           verifyLease(token);
           // Read exact live membership and selection before writing.
           const latest=await discover(config(),{...opts,groups:[g.name]},{});
-          if(network(config()).key!==net.key||latest.length!==1||latest[0].error||!latest[0].autoEligible||latest[0].selected!==g.selected||!latest[0].nodes.includes(d.to)||!latest[0].nodes.includes(g.selected)){
+          if(quietStop(opts,run)){
+            d={...d,reason:"quiet_hours",to:null};state.pending=null;
+          }else if(network(config()).key!==net.key||latest.length!==1||latest[0].error||!latest[0].autoEligible||latest[0].selected!==g.selected||!latest[0].nodes.includes(d.to)||!latest[0].nodes.includes(g.selected)){
             d={...d,reason:"preflight_changed",to:null};
             state.pending=null;
           }else if(typeof api.setSelected!=="function"){
@@ -319,6 +346,9 @@ function createSmartSelection(api) {
             // Persist intent before mutation. A later run detects interruption.
             state.pending=null;state.holdUntil=t+30*60000;
             s.control[key]=state;save(s);
+            if(quietStop(opts,run)){
+              d={...d,reason:"quiet_hours",to:null};state.holdUntil=0;s.control[key]=state;save(s);decisions.push(d);continue;
+            }
             const target=d.to;
             const accepted=api.setSelected(g.name,target)===true;
             const actual=api.selected(g.name);
@@ -345,27 +375,38 @@ function createSmartSelection(api) {
         return {name:g.name,selected:g.selected,selectedInCandidates:g.nodes.includes(g.selected),autoEligible:g.autoEligible,count:g.nodes.length,skipped:g.skipped,error:g.error,discovery:g.discovery,ranked:rows.filter(r=>r.score!=null).length,rows};})};
   }
   function summary(r){
-    const lines=[`Smart Selection ${r.version} · ${r.mode}`,`${r.network}｜今日预算 ${r.chargedMB}/${r.budgetMB} MB（预扣估算）`];
-    if(r.batch){lines.push(`本轮检测 ${r.batch.tested.length}/${r.batch.uniqueCandidates} 个去重节点；${r.batch.chargedMB} MB；${r.batch.stopReason||"本批完成"}`);if(r.batch.deferred.length)lines.push(`故障退避：${r.batch.deferred.length} 个节点`);if(r.batch.egress.length)lines.push(`出口诊断：${r.batch.egress.filter(x=>x.status==="observed").length} 个成功；出口编号仅本轮有效`);}
-    for(const g of r.groups){
-      lines.push(`\n${g.name} · ${g.ranked}/${g.count} 已评分${g.skipped?" · 排除 "+g.skipped:""}`);
-      if(g.error){lines.push(g.error);continue;}
-      lines.push("当前："+(g.selected||"未知")+(g.selected&&!g.selectedInCandidates?"（未与候选名称精确匹配）":""));
-      for(const x of g.rows.slice(0,5))lines.push(`${x.current?"●":"○"} ${x.node}｜${x.score??"—"} 分｜${format(x.delay)} ms｜${format(x.speed)} Mbps｜${x.status}`);
-      if(g.rows.length>5)lines.push("其余节点详见脚本日志");
+    const lines=[r.mode==="智能选路"?"自动选路已开启":"仅检测模式",`今日测速预算：${r.chargedMB} / ${r.budgetMB} MB`];
+    const reasons={observe_only:"仅检测",unsafe_group_membership:"保留原策略",selection_not_in_candidates:"请检查当前节点",network_identity_unknown:"暂不切换",initial_baseline:"正在收集数据",external_selection_hold:"保留手动选择",manual_hold:"保留手动选择",no_fresh_confirmed_candidate:"继续观察",switch_cooldown:"保持当前线路",current_not_comparable:"继续观察",no_material_gain:"保持当前线路",awaiting_confirmation:"发现更优线路，继续确认",preflight_changed:"策略组已变化",selection_api_unavailable:"无法切换",switch_not_confirmed:"切换未成功",decision_or_api_error:"选路暂不可用",run_interrupted:"检测未完成",quiet_hours:"休眠中"};
+    if(r.batch){
+      lines.push(`本次检测：${r.batch.tested.length} 条线路`);
+      if(r.batch.stopReason==="休眠时段")lines.push("已进入休眠时段");
+      else if(r.batch.stop)lines.push("部分线路检测未完成");
     }
-    if(!r.networkIdentified)lines.push("\n网络身份未识别，历史数据仅短期使用。");
-    const reasons={observe_only:"仅观察",unsafe_group_membership:"非纯节点组，跳过自动选路",selection_not_in_candidates:"当前节点不匹配，保护中",network_identity_unknown:"网络身份不明，暂不切换",initial_baseline:"建立基线",external_selection_hold:"检测到外部切换，暂停接管2小时",manual_hold:"手动选择保护",no_fresh_confirmed_candidate:"无新鲜且已复测候选",switch_cooldown:"切换冷却中",current_not_comparable:"当前节点缺少可比较样本",no_material_gain:"优势不足，保持当前",awaiting_confirmation:"等待下一轮确认",preflight_changed:"配置已变化，取消切换",selection_api_unavailable:"切换接口不可用",switch_not_confirmed:"切换未确认，暂停接管",decision_or_api_error:"决策接口异常",run_interrupted:"本轮请求未确认结束，暂停切换"};
-    if(r.batch&&r.batch.decisions.length){lines.push("\n选路决策：");for(const d of r.batch.decisions)lines.push(d.group+"："+(d.switched?d.from+" → "+d.to:reasons[d.reason]||d.reason));}
-    lines.push("\n完整诊断已合并至同一日志，无需另行运行质量报告。");
+    for(const g of r.groups){
+      lines.push("\n"+g.name);
+      const current=g.rows.find(x=>x.current);
+      lines.push("当前："+(g.selected||"未选择")+(current&&current.score!=null?` · ${current.score} 分 · ${format(current.speed)} Mbps`:""));
+      const best=g.rows.find(x=>x.score!=null);
+      if(best&&best.node!==g.selected)lines.push(`推荐：${best.node} · ${best.score} 分`);
+      const decision=r.batch?.decisions.find(x=>x.group===g.name);
+      if(decision)lines.push(decision.switched?"已切换至更优线路":reasons[decision.reason]||"保持当前线路");
+      else if(g.error||!g.selectedInCandidates)lines.push("请检查策略组设置");
+      if(!g.ranked)lines.push("暂无有效测速结果");
+    }
     return lines.join("\n");
   }
   async function run(args,context={}){
-    const opts=options(args),c=config(),net=network(c);
+    const opts=options(args);
     const tag=String(context.tag||"");
     const isReport=tag.includes("质量报告"); // backward compatibility for cached old entry
-    const unified=tag.includes("一键诊断");
+    const unified=tag.includes("一键诊断")||tag.includes("立即检测");
     if(unified)context={...context,group:"",node:""};
+    if(!isReport&&quietAt(opts,now())){
+      const report={version:VERSION,status:"quiet_hours",quietHours:{enabled:true,start:clockText(opts.quiet.start),end:clockText(opts.quiet.end)},batch:{tested:[],chargedMB:0,decisions:[],stopReason:"休眠时段"},diagnostic:{schema:3,generatedAt:new Date(now()).toISOString(),checks:{lightProbe:"not_run",downloadProbe:"not_run",policySwitch:"not_attempted"}}};
+      api.log("SMART_SELECTION_DIAGNOSTIC_BEGIN");api.log(JSON.stringify(report));api.log("SMART_SELECTION_DIAGNOSTIC_END");
+      return {title:"休眠中",content:"休眠时段 "+quietLabel(opts)+"，结束后恢复自动检测。",report};
+    }
+    const c=config(),net=network(c);
     const token=claim();
     if(!token)return {title:"Smart Selection",content:"已有任务执行，稍后重试"};
     try{
@@ -380,7 +421,7 @@ function createSmartSelection(api) {
       const candidates=queue(groups,s,net,unified);
       const decided=new Set();
       async function checkpoint(final=false){
-        if(run.stop||network(config()).key!==net.key)return;
+        if(quietStop(opts,run)||run.stop||network(config()).key!==net.key)return;
         const tested=new Map(run.samples.map(x=>[x.node,x.sample]));
         const ready=groups.filter(g=>!decided.has(g.name)&&(final||(
           opts.autoSelect&&inScope(opts,g.name)&&g.autoEligible&&
@@ -395,7 +436,7 @@ function createSmartSelection(api) {
       // Alias labels are local to this run; no raw IP or IP hash is logged or persisted.
       const aliases=new Map();
       async function observeEgress(){
-        if(!unified||run.stop)return;
+        if(!unified||quietStop(opts,run)||run.stop)return;
         for(const item of run.samples.filter(x=>x.sample.ok>0&&!run.egress.some(e=>e.node===x.node))){
           if(run.stop||now()-run.start>RUN_MS-20000||network(config()).key!==net.key)break;
           const r=await request(item.node,"https://speed.cloudflare.com/cdn-cgi/trace","get",4096,s,probeOpts,run,token,true);
@@ -407,11 +448,12 @@ function createSmartSelection(api) {
         }
       }
       for(const node of candidates){
+        if(quietStop(opts,run))break;
         if(retryInfo(getRecord(s,net,node)).failures){
           await checkpoint();
           await observeEgress();
         }
-        if(run.stop){run.stopReason="请求异常，提前结束";break;}
+        if(run.stop){run.stopReason=run.stopReason||"请求异常，提前结束";break;}
         if(run.tested.length>=BATCH){run.stopReason="达到单轮节点上限";break;}
         if(now()-run.start>RUN_MS-20000){run.stopReason="达到单轮时间上限";break;}
         if(s.charged+2*MB+48000>probeOpts.budget){run.stopReason="当日剩余预算不足";break;}
@@ -419,13 +461,13 @@ function createSmartSelection(api) {
         // Abort if identified Wi-Fi changes during a batch.
         if(network(config()).key!==net.key){run.stop=true;run.stopReason="网络环境变化";break;}
         const sample=await probe(node,s,probeOpts,run,token);
-        if(sample.attempts){record(s,net,node,sample);run.tested.push(node);run.samples.push({node,sample});api.log(JSON.stringify({node,sample}));save(s);}
+        if(sample.attempts){if(run.stopReason!=="休眠时段"||sample.attempts>=3)record(s,net,node,sample);run.tested.push(node);run.samples.push({node,sample});api.log(JSON.stringify({node,sample}));save(s);}
       }
       // Complete eligible group decisions before optional diagnostics can stall.
       await checkpoint(true);
       await observeEgress();
       for(const g of groups.filter(x=>!decided.has(x.name))){
-        const reason=!opts.autoSelect||!inScope(opts,g.name)?"observe_only":!g.autoEligible?"unsafe_group_membership":g.error||!g.nodes.includes(g.selected)?"selection_not_in_candidates":"run_interrupted";
+        const reason=!opts.autoSelect||!inScope(opts,g.name)?"observe_only":!g.autoEligible?"unsafe_group_membership":g.error||!g.nodes.includes(g.selected)?"selection_not_in_candidates":run.stopReason==="休眠时段"?"quiet_hours":"run_interrupted";
         run.decisions.push({group:g.name,from:g.selected,to:null,reason});
       }
       if(opts.notify&&typeof api.notify==="function"){
@@ -435,7 +477,7 @@ function createSmartSelection(api) {
       s.cursor=(s.cursor||0)+1;prune(s);s.last=now();save(s);
       if(!run.stopReason)run.stopReason=run.stop?"请求异常，提前结束":candidates.length===0?(run.deferred.length?"故障节点退避中":"没有可测速节点"):"本轮候选检测完成";
       const report=buildReport(groups,s,net,opts,run);
-      report.diagnostic={schema:2,settings:{autoSelect:opts.autoSelect,scopeMode:opts.managed.length?"specified":"all",managedGroups:opts.managed,matchedManagedGroups:opts.autoSelect?groups.filter(g=>inScope(opts,g.name)&&g.autoEligible).map(g=>g.name):[],groupTypeVerification:"not_exposed_by_documented_api"},generatedAt:new Date(now()).toISOString(),scope:unified?"all_configured_groups":"configured_scope",checks:{
+      report.diagnostic={schema:3,settings:{quietHours:{enabled:opts.quiet.enabled,start:clockText(opts.quiet.start),end:clockText(opts.quiet.end)},autoSelect:opts.autoSelect,scopeMode:opts.managed.length?"specified":"all",managedGroups:opts.managed,matchedManagedGroups:opts.autoSelect?groups.filter(g=>inScope(opts,g.name)&&g.autoEligible).map(g=>g.name):[],groupTypeVerification:"not_exposed_by_documented_api"},generatedAt:new Date(now()).toISOString(),scope:unified?"all_configured_groups":"configured_scope",checks:{
         groupDiscovery:groups.length>0&&groups.every(g=>!g.error)?"pass":groups.some(g=>!g.error)?"partial":"fail",
         selectedRead:groups.every(g=>g.selected)?"pass":"partial",
         selectedMembership:groups.every(g=>g.selected&&g.nodes.includes(g.selected))?"pass":"mismatch_or_unknown",
@@ -447,10 +489,10 @@ function createSmartSelection(api) {
       api.log("SMART_SELECTION_DIAGNOSTIC_BEGIN");
       api.log(JSON.stringify(report));
       api.log("SMART_SELECTION_DIAGNOSTIC_END");
-      return {title:"一键诊断完成",content:summary(report),report};
+      return {title:run.stopReason==="休眠时段"?"休眠中":"线路优选",content:summary(report),report};
     }finally{release(token);}
   }
-  return {run,quality,queue,options,network,newState,buildReport,choose};
+  return {run,quality,queue,options,network,newState,buildReport,choose,quietAt};
 }
 
 if (typeof module !== "undefined" && module.exports) {
@@ -476,5 +518,5 @@ if (typeof module !== "undefined" && module.exports) {
   const node = typeof params.node === "string" ? params.node : (params.nodeInfo && typeof params.nodeInfo.name === "string" ? params.nodeInfo.name : "");
   createSmartSelection(api).run(args, { tag, group: typeof params.policyGroup === "string" ? params.policyGroup : "", node })
     .then(result => { $done({title:result.title, content:result.content}); })
-    .catch(error => { console.log("Smart Selection: " + String(error.message || error)); $done({title:"Smart Selection 检测中止",content:String(error.message || error)}); });
+    .catch(error => { console.log("Smart Selection: " + String(error.message || error)); $done({title:"暂时无法检测",content:String(error.message || error)}); });
 }

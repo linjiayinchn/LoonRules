@@ -1,16 +1,19 @@
 #!name = Smart Selection
-#!desc = 多策略组智能选路（V1.0.0-rc.3）；按质量独立选路，管理组留空即全选。
+#!desc = 综合速度、延迟和稳定性，为各策略组自动选择优质线路。
 #!system = iOS,iPadOS
 #!loon_version = 3.5.1(983)
 
 [Argument]
-dailyMB = select,200,100,50,300,type=number,tag=每日下载预算（MB）,desc=所有策略组共享的预扣预算
-groups = input,"",type=string,tag=管理策略组,desc=留空检测并管理全部纯节点组；指定组名用英文分号分隔；接管组须为 select
-autoSelect = switch,true,type=boolean,tag=自动选路,desc=开启后按管理范围自动选路；关闭只检测
-notify = switch,false,type=boolean,tag=切换通知,desc=仅确认切换时通知
-autoProbe = switch,true,type=boolean,tag=定时检测,desc=每30分钟分批检测并按设置选路
+groups = input,"",type=string,tag=管理策略组,desc=留空管理全部线路组；多个组名用英文分号隔开
+autoSelect = switch,true,type=boolean,tag=自动选路,desc=根据线路质量自动选择节点
+autoProbe = switch,true,type=boolean,tag=自动检测,desc=每30分钟及网络变化时检测线路
+dailyMB = select,200,100,50,300,type=number,tag=每日测速预算（MB）,desc=所有策略组共享
+quietEnabled = switch,true,type=boolean,tag=休眠时段,desc=休眠期间暂停测速与选路
+quietStart = input,"00:00",type=string,tag=休眠开始,desc=24小时制 HH:mm
+quietEnd = input,"08:00",type=string,tag=休眠结束,desc=24小时制 HH:mm
+notify = switch,false,type=boolean,tag=切换通知,desc=线路切换成功时通知
 
 [Script]
-generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.3", {${dailyMB}, ${groups}, ${autoSelect}, ${notify}}) with tag="Smart Selection · 一键诊断", timeout=220, img_url="gauge.system"
-cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.3", {${dailyMB}, ${groups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220
-network-changed then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.3", {${dailyMB}, ${groups}, ${autoSelect}, ${notify}}) with enable=${autoProbe}, tag="Smart Selection · 网络变化", timeout=220
+generic then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.4", {${dailyMB}, ${groups}, ${autoSelect}, ${notify}, ${quietEnabled}, ${quietStart}, ${quietEnd}}) with tag="Smart Selection · 立即检测", timeout=220, img_url="gauge.system"
+cron "*/30 * * * *" then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.4", {${dailyMB}, ${groups}, ${autoSelect}, ${notify}, ${quietEnabled}, ${quietStart}, ${quietEnd}}) with enable=${autoProbe}, tag="Smart Selection · 定时检测", timeout=220
+network-changed then script("https://raw.githubusercontent.com/GFStillpoint/RoutingRules/main/plugins/loon/smart-selection/Smart_Selection.js?v=1.0.0-rc.4", {${dailyMB}, ${groups}, ${autoSelect}, ${notify}, ${quietEnabled}, ${quietStart}, ${quietEnd}}) with enable=${autoProbe}, tag="Smart Selection · 网络变化", timeout=220
