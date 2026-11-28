@@ -96,6 +96,9 @@ function mockTests(factory){
     fail.advance(7*3600000);
     const recovery=(await fc.run({},{})).report;
     check(recovery.batch.tested.includes("US"),"failed nodes re-enter after cooldown");
+    const ix=fail.calls.findIndex(x=>x.url.includes("/cdn-cgi/trace"));
+    const lastUS=fail.calls.map(x=>x.node).lastIndexOf("US");
+    check(ix>=0&&ix<lastUS,"manual egress evidence saved before known-failing candidates");
     return {passed};
   })();
 }

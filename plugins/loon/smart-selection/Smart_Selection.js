@@ -290,7 +290,23 @@ function createSmartSelection(api) {
       const run={start:now(),charged:0,actual:0,tested:[],samples:[],egress:[],deferred:[],stop:false,stopReason:null};
       const candidates=queue(groups,s,net,unified);
       run.deferred=unique(groups.flatMap(g=>g.nodes)).filter(x=>!candidates.includes(x)).map(node=>({node,...retryInfo(getRecord(s,net,node))}));
+      // Manual diagnostic: inspect reachable nodes' observed egress after core probes.
+      // Alias labels are local to this run; no raw IP or IP hash is logged or persisted.
+      const aliases=new Map();
+      async function observeEgress(){
+        if(!unified||run.stop)return;
+        for(const item of run.samples.filter(x=>x.sample.ok>0&&!run.egress.some(e=>e.node===x.node))){
+          if(run.stop||now()-run.start>RUN_MS-20000||network(config()).key!==net.key)break;
+          const r=await request(item.node,"https://speed.cloudflare.com/cdn-cgi/trace","get",4096,s,opts,run,token,true);
+          if(r.skipped)break;
+          if(r.ok){
+            if(!aliases.has(r.ip))aliases.set(r.ip,"E"+(aliases.size+1));
+            run.egress.push({node:item.node,status:"observed",alias:aliases.get(r.ip),colo:r.colo,ms:r.elapsed});
+          }else run.egress.push({node:item.node,status:"unverified",error:r.error||"出口响应无法校验"});
+        }
+      }
       for(const node of candidates){
+        if(retryInfo(getRecord(s,net,node)).failures)await observeEgress();
         if(run.stop){run.stopReason="请求异常，提前结束";break;}
         if(run.tested.length>=BATCH){run.stopReason="达到单轮节点上限";break;}
         if(now()-run.start>RUN_MS-20000){run.stopReason="达到单轮时间上限";break;}
@@ -301,20 +317,7 @@ function createSmartSelection(api) {
         const sample=await probe(node,s,opts,run,token);
         if(sample.attempts){record(s,net,node,sample);run.tested.push(node);run.samples.push({node,sample});api.log(JSON.stringify({node,sample}));save(s);}
       }
-      // Manual diagnostic: inspect reachable nodes' observed egress after core probes.
-      // Alias labels are local to this run; no raw IP or IP hash is logged or persisted.
-      if(unified&&!run.stop){
-        const aliases=new Map();
-        for(const item of run.samples.filter(x=>x.sample.ok>0)){
-          if(run.stop||now()-run.start>RUN_MS-20000||network(config()).key!==net.key)break;
-          const r=await request(item.node,"https://speed.cloudflare.com/cdn-cgi/trace","get",4096,s,opts,run,token,true);
-          if(r.skipped)break;
-          if(r.ok){
-            if(!aliases.has(r.ip))aliases.set(r.ip,"E"+(aliases.size+1));
-            run.egress.push({node:item.node,status:"observed",alias:aliases.get(r.ip),colo:r.colo,ms:r.elapsed});
-          }else run.egress.push({node:item.node,status:"unverified",error:r.error||"出口响应无法校验"});
-        }
-      }
+      await observeEgress();
       s.cursor=(s.cursor||0)+1;prune(s);s.last=now();save(s);
       if(!run.stopReason)run.stopReason=run.stop?"请求异常，提前结束":candidates.length===0?(run.deferred.length?"故障节点退避中":"没有可测速节点"):"本轮候选检测完成";
       const report=buildReport(groups,s,net,opts,run);
